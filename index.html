@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f3eb">
   <link rel="icon" href="data:,">
-  <title>나를 닮은 크리쳐 · 모카가든</title>
-  <script type="module" crossorigin src="./assets/index-E8egy26N.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DKExp1-j.css">
+  <title>움직이는 자화상 · 모카가든</title>
+  <script type="module" crossorigin src="./assets/index-XU1RD7d4.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DKUDit4j.css">
 </head>
 <body>
   <header class="masthead">
@@ -21,8 +21,8 @@
 
   <main>
     <div class="intro">
-      <div><p class="kicker">자화상 만들기</p><h1>나를 닮은 크리쳐</h1></div>
-      <p id="intro-copy">실험실을 나온 크리쳐들이 모카가든에 산다고 상상해요. 그중 하나를 내 특징을 담아 빚어요.</p>
+      <div><p class="kicker">《완벽한 바나바》 워크숍</p><h1>움직이는 자화상</h1></div>
+      <p id="intro-copy">실험실을 탈출한 생명체들이 모카가든에 자리 잡았어요. 그중 하나에 내 특징을 담아 봐요.</p>
     </div>
 
     <div class="workspace">
@@ -39,15 +39,18 @@
       <aside class="control-panel" aria-label="단계별 활동">
         <section id="panel-make" class="panel">
           <h2>어떤 모습으로 빚을까?</h2>
-          <p>몸의 표면을 터치하고 드래그해 모양을 바꿔요.</p>
+          <p>표면을 손가락으로 밀거나 당겨 빚어요. 칠하기를 고르면 닿는 곳에 색이 입혀져요.</p>
           <fieldset><legend>도구</legend>
             <div class="tool-grid">
               <button type="button" data-tool="pull" aria-pressed="true">당기기</button>
               <button type="button" data-tool="push" aria-pressed="false">밀기</button>
+              <button type="button" data-tool="smooth" aria-pressed="false">다듬기</button>
+              <button type="button" data-tool="paint" aria-pressed="false">칠하기</button>
               <button type="button" data-tool="orbit" aria-pressed="false">돌려 보기</button>
               <button type="button" id="undo" disabled>되돌리기</button>
             </div>
           </fieldset>
+          <div class="brush-control"><label for="brush-size">도구 크기</label><input id="brush-size" type="range" min="1" max="10" value="5"></div>
           <fieldset><legend>색</legend><div id="colors" class="colors" aria-label="캐릭터 색"></div></fieldset>
           <div class="control-actions">
             <button type="button" id="rig-preview" class="secondary">뼈대로 움직여 보기</button>
@@ -69,8 +72,8 @@
         </section>
 
         <section id="panel-place" class="panel" hidden>
-          <h2>크리쳐가 살 자리</h2>
-          <p>고른 자리를 비추고 화면을 터치해요. 크리쳐가 그 자리에서 저장한 동작을 해요.</p>
+          <h2>생명체가 살 자리</h2>
+          <p>고른 자리를 비추고 화면을 터치해요. 내가 만든 생명체가 그 자리에서 움직여요.</p>
           <label for="place-note">고른 자리와 그 이유</label>
           <textarea id="place-note" rows="3" maxlength="180" placeholder="이 자리를 고른 이유를 적어요."></textarea>
           <p id="place-status" class="status" aria-live="polite"></p>
