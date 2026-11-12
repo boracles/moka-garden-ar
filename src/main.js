@@ -2,7 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
-import {applyBrush,createAvatar,palette,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
+import {applyBrush,createAvatar,palette,partReaction,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
 import {MotionCapture} from './motion.js';
 import {GardenAR,warmUpAR} from './garden-ar.js';
 
@@ -10,9 +10,10 @@ const ui=id=>document.getElementById(id);
 const intro = {
   make:'실험실을 탈출한 생명체들이 모카가든에 자리 잡았어요. 그중 하나에 내 특징을 담아 봐요.',
   move:'내 특징이 잘 드러나는 동작을 골라 내가 만든 생명체에 입혀요.',
+  ability:'내가 만든 생명체가 정원에서 무엇을 하는지 골라 봐요.',
   place:'모카가든에서 내가 만든 생명체가 살 자리를 골라요.',
 };
-const labels={make:'형태 편집 중',move:'동작 미리 보기',place:'내 자화상'};
+const labels={make:'형태 편집 중',move:'동작 미리 보기',ability:'기능 미리 보기',place:'내 자화상'};
 const avatar=createAvatar();
 const scene=new THREE.Scene();
 scene.add(avatar.model);
@@ -68,6 +69,9 @@ let tool='pull';
 const paintColor=new THREE.Color(palette[1][1]);
 let motionClip=null;
 let mixer=null;
+let previewReaction=null;
+let reactionAmount=0;
+let audioContext;
 let cameraRequest=0;
 let openingCamera=false;
 let brush=null;
@@ -89,14 +93,16 @@ const motion=new MotionCapture(ui('motion-video'),avatar,{
     updateMotionButtons();
   },
   complete:clip=>{
+    if (!motionClip) ui('use-movement').checked=true;
     motionClip=clip;
     closeCamera();
     preview(clip);
-    ui('motion-status').textContent='동작을 저장했어요. 캐릭터를 다시 보거나 정원에 놓을 수 있어요.';
+    ui('motion-status').textContent='동작을 저장했어요. 기능 붙이기에서 속도를 바꿀 수 있어요.';
     updateMotionButtons();
+    updateAbilities();
   },
 });
-const ar=new GardenAR(ui('ar-canvas'),message=>{ui('ar-status').textContent=message;});
+const ar=new GardenAR(ui('ar-canvas'),message=>{ui('ar-status').textContent=message;},updateARAbilities);
 
 function closeCamera() {
   cameraRequest++;
@@ -112,7 +118,7 @@ function updateMotionButtons() {
   ui('record').disabled=!motion.active || !motion.seesPose || Boolean(motion.recording);
   ui('replay').disabled=!motionClip || openingCamera || Boolean(motion.recording);
   ui('download').disabled=!motionClip || openingCamera || Boolean(motion.recording);
-  ui('start-ar').disabled=!motionClip || !renderer;
+  ui('start-ar').disabled=!renderer;
 }
 
 function stopPreview() {
@@ -121,11 +127,12 @@ function stopPreview() {
   resetPose(avatar);
 }
 
-function preview(clip) {
+function preview(clip,speed=1) {
   stopPreview();
   mixer=new THREE.AnimationMixer(avatar.model);
   const action=mixer.clipAction(clip);
   action.setLoop(THREE.LoopOnce,1);
+  action.timeScale=speed;
   mixer.addEventListener('finished',stopPreview);
   action.play();
 }
@@ -152,6 +159,91 @@ function refreshEditor() {
     button.disabled=avatar.parts.has(button.dataset.part);
   }
   if (step==='make') ui('stage-label').textContent=showingExample?'완성 예시':avatar.parts.size?'작업 중':'점토 구';
+}
+
+function addClayPart(part) {
+  stopPreview();
+  if (!avatar.addPart(part)) return;
+  rememberEdit({part});
+  frameModel(avatar.model);
+}
+
+function reactionSettings() {
+  return ui('use-listening').checked ? {
+    part:ui('reaction-part').value,
+    size:Number(ui('ear-angle').value)/5,
+  } : null;
+}
+
+function reactionLabel(settings) {
+  return settings?.part==='ears' ? '듣기' : '움직이기';
+}
+
+function clearReactionPreview() {
+  previewReaction?.(0);
+  reactionAmount=0;
+  ui('listen-preview').setAttribute('aria-pressed','false');
+}
+
+function updateAbilities() {
+  const reaction=reactionSettings();
+  ui('listening-options').hidden=!reaction;
+  ui('extension-settings').hidden=reaction?.part!=='extension';
+  ui('listen-preview').textContent=reactionLabel(reaction);
+  ui('sound-options').hidden=!ui('use-sound').checked;
+  ui('use-movement').disabled=!motionClip;
+  ui('movement-help').hidden=Boolean(motionClip);
+  ui('movement-options').hidden=!motionClip || !ui('use-movement').checked;
+}
+
+function configureReaction() {
+  clearReactionPreview();
+  const reaction=reactionSettings();
+  if (reaction) {
+    addClayPart(reaction.part);
+    previewReaction=partReaction(avatar.model,reaction.part);
+  } else {
+    previewReaction=null;
+  }
+  updateAbilities();
+}
+
+function updateARAbilities(placed) {
+  const reaction=reactionSettings();
+  const sound=ui('use-sound').checked;
+  const button=ui('listen-ar');
+  button.hidden=!reaction;
+  button.textContent=reactionLabel(reaction);
+  button.setAttribute('aria-pressed','false');
+  ui('sound-ar').hidden=!sound;
+  ui('ar-abilities').hidden=!placed || (!reaction && !sound);
+}
+
+async function playCreatureSound(status) {
+  try {
+    audioContext??=new AudioContext();
+    if (audioContext.state!=='running') await audioContext.resume();
+    const now=audioContext.currentTime;
+    const oscillator=audioContext.createOscillator();
+    const volume=audioContext.createGain();
+    const pitch=165*2**((Number(ui('sound-pitch').value)-1)/3);
+    oscillator.type='triangle';
+    oscillator.frequency.setValueAtTime(pitch,now);
+    oscillator.frequency.exponentialRampToValueAtTime(pitch*1.35,now+.11);
+    oscillator.frequency.exponentialRampToValueAtTime(pitch*.83,now+.35);
+    volume.gain.setValueAtTime(.001,now);
+    volume.gain.exponentialRampToValueAtTime(.12,now+.04);
+    volume.gain.exponentialRampToValueAtTime(.001,now+.36);
+    oscillator.connect(volume).connect(audioContext.destination);
+    oscillator.start(now);
+    oscillator.stop(now+.37);
+    oscillator.onended=()=>{oscillator.disconnect();volume.disconnect();};
+  } catch(error) {
+    const message='소리를 재생하지 못했어요. 기기의 소리 설정을 확인해 주세요.';
+    status.textContent=message;
+    status.hidden=false;
+    console.error(error);
+  }
 }
 
 function setExample(visible) {
@@ -184,6 +276,7 @@ function setStep(value) {
   if (showingExample) setExample(false);
   if (step==='move') closeCamera();
   stopPreview();
+  clearReactionPreview();
   step=value;
   for (const [id] of Object.entries(intro)) {
     ui('panel-'+id).hidden=id!==value;
@@ -198,16 +291,16 @@ function setStep(value) {
   ui('stage-toolbar').hidden=value!=='make';
   ui('brush-cursor').hidden=true;
   ui('workspace').classList.toggle('sculpt-mode',value==='make');
+  ui('workspace').classList.toggle('ability-mode',value==='ability');
   if (orbit) orbit.enabled=step!=='make' || tool==='orbit';
   ui('viewport').classList.toggle('orbit-mode',value!=='make'||tool==='orbit');
   if (step==='place') {
-    ui('place-status').textContent=motionClip
-      ? '정원에서 고른 자리를 태블릿으로 비춰요.'
-      : '동작을 먼저 녹화하면 정원에 놓을 수 있어요.';
-    if (motionClip && matchMedia('(pointer: coarse)').matches) warmUpAR().catch(()=>{});
+    ui('place-status').textContent='정원에서 고른 자리를 태블릿으로 비춰요.';
+    if (renderer && matchMedia('(pointer: coarse)').matches) warmUpAR().catch(()=>{});
   }
   refreshEditor();
   updateMotionButtons();
+  updateAbilities();
 }
 
 for (const button of document.querySelectorAll('[data-step]')) {
@@ -236,12 +329,7 @@ for (const button of document.querySelectorAll('[data-tool]')) {
 }
 
 for (const button of document.querySelectorAll('[data-part]')) {
-  button.addEventListener('click',()=>{
-    stopPreview();
-    if (!avatar.addPart(button.dataset.part)) return;
-    rememberEdit({part:button.dataset.part});
-    frameModel(avatar.model);
-  });
+  button.addEventListener('click',()=>addClayPart(button.dataset.part));
 }
 
 ui('show-example').addEventListener('click',()=>setExample(!showingExample));
@@ -342,6 +430,10 @@ ui('undo').addEventListener('click',()=>{
   if (last.part) {
     stopPreview();
     avatar.removePart(last.part);
+    if (reactionSettings()?.part===last.part) {
+      ui('use-listening').checked=false;
+      configureReaction();
+    }
     frameModel(avatar.model);
   } else {
     for (const [mesh,values] of last.changes) restoreBrushAttribute(mesh,last.attribute,values);
@@ -410,15 +502,41 @@ ui('download').addEventListener('click',async()=>{
   }
 });
 
+ui('use-listening').addEventListener('change',configureReaction);
+ui('reaction-part').addEventListener('change',configureReaction);
+ui('extension-place').addEventListener('change',event=>{
+  avatar.positionExtension(event.target.value);
+  frameModel(avatar.model);
+});
+for (const id of ['use-sound','use-movement']) ui(id).addEventListener('change',updateAbilities);
+for (const id of ['ear-angle','sound-pitch','motion-speed']) {
+  ui(id).addEventListener('input',event=>{
+    const value=event.target.value;
+    ui(id+'-value').value=id==='motion-speed' ? value+'배' : value+' / 5';
+  });
+}
+ui('listen-preview').addEventListener('click',event=>{
+  const button=event.currentTarget;
+  button.setAttribute('aria-pressed',String(button.getAttribute('aria-pressed')!=='true'));
+});
+ui('sound-preview').addEventListener('click',()=>playCreatureSound(ui('ability-status')));
+ui('movement-preview').addEventListener('click',()=>{
+  if (motionClip) preview(motionClip,Number(ui('motion-speed').value));
+});
+
 ui('start-ar').addEventListener('click',async()=>{
-  if (!motionClip) return;
+  if (!renderer) return;
   closeCamera();
   stopPreview();
+  clearReactionPreview();
   ui('ar-overlay').hidden=false;
   ui('ar-status').textContent='뒤 카메라와 정원 위치 추적을 준비하고 있어요.';
   ui('close-ar').focus();
   try {
-    await ar.open(snapshotModel(avatar),motionClip);
+    await ar.open(snapshotModel(avatar),ui('use-movement').checked?motionClip:null,{
+      reaction:reactionSettings(),
+      speed:Number(ui('motion-speed').value),
+    });
   } catch(error) {
     if (!ui('ar-overlay').hidden) ui('ar-status').textContent=error.message;
     console.error(error);
@@ -434,6 +552,10 @@ ui('smaller').addEventListener('click',()=>ar.resize(.82));
 ui('larger').addEventListener('click',()=>ar.resize(1.22));
 ui('rotate-ar').addEventListener('click',()=>ar.rotate());
 ui('reset-ar').addEventListener('click',()=>ar.reset());
+ui('listen-ar').addEventListener('click',event=>{
+  event.currentTarget.setAttribute('aria-pressed',String(ar.toggleReaction()));
+});
+ui('sound-ar').addEventListener('click',()=>playCreatureSound(ui('ar-status')));
 window.addEventListener('keydown',event=>{
   if (event.key==='Escape' && !ui('ar-overlay').hidden) closeAR();
 });
@@ -449,6 +571,12 @@ function draw(now) {
   if (renderer && ui('ar-overlay').hidden) {
     if (motion.active) motion.update(now);
     else mixer?.update(elapsed);
+    if (step==='ability' && previewReaction) {
+      const pressed=ui('listen-preview').getAttribute('aria-pressed')==='true';
+      const target=pressed ? Number(ui('ear-angle').value)/5 : 0;
+      reactionAmount=THREE.MathUtils.damp(reactionAmount,target,13,elapsed);
+      previewReaction(reactionAmount);
+    }
     orbit.update();
     renderer.render(scene,camera);
   }
@@ -458,4 +586,5 @@ requestAnimationFrame(draw);
 frameModel(avatar.model);
 refreshEditor();
 updateMotionButtons();
+updateAbilities();
 

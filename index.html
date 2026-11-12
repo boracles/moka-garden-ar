@@ -13,7 +13,8 @@
     <nav aria-label="워크숍 단계" class="steps">
       <button type="button" data-step="make" aria-current="step"><span>1</span> 형태 빚기</button>
       <button type="button" data-step="move"><span>2</span> 동작 녹화</button>
-      <button type="button" data-step="place"><span>3</span> 정원에 놓기</button>
+      <button type="button" data-step="ability"><span>3</span> 기능 붙이기</button>
+      <button type="button" data-step="place"><span>4</span> 정원에 놓기</button>
     </nav>
   </header>
 
@@ -59,8 +60,10 @@
               <legend>점토 붙이기</legend>
               <div class="part-grid">
                 <button type="button" data-part="head" class="secondary">＋ 머리</button>
+                <button type="button" data-part="ears" class="secondary">＋ 귀</button>
                 <button type="button" data-part="arms" class="secondary">＋ 팔</button>
                 <button type="button" data-part="legs" class="secondary">＋ 다리</button>
+                <button type="button" data-part="extension" class="secondary">＋ 움직이는 점토</button>
               </div>
             </fieldset>
             <div class="control-actions">
@@ -81,12 +84,53 @@
             <button type="button" id="download" class="text-button" disabled>3D 작품 저장 (.glb)</button>
           </div>
           <p id="motion-status" class="status" aria-live="polite">동작을 정하면 앞 카메라를 켜요.</p>
+          <button type="button" data-step="ability" class="primary bottom-action">기능 붙이기로</button>
+        </section>
+
+        <section id="panel-ability" class="panel" hidden>
+          <h2>내 생명체는 뭘 할까?</h2>
+          <p>정원에서 쓸 기능을 골라 붙여요. 슬라이더를 바꾸고 바로 시험해 봐요.</p>
+          <div class="abilities">
+            <fieldset class="ability-card">
+              <label class="ability-choice"><input id="use-listening" type="checkbox" aria-controls="listening-options"> 버튼으로 몸 움직이기</label>
+              <div id="listening-options" class="ability-options" hidden>
+                <label for="reaction-part">움직일 부분</label>
+                <select id="reaction-part"><option value="ears">귀</option><option value="extension">움직이는 점토</option></select>
+                <div id="extension-settings" class="ability-options" hidden>
+                  <label for="extension-place">점토 붙일 자리</label>
+                  <select id="extension-place"><option value="top">위</option><option value="front">앞</option><option value="side">옆</option><option value="back">뒤</option></select>
+                  <button type="button" data-step="make" class="text-button">붙인 점토 더 빚기</button>
+                </div>
+                <div class="ability-setting"><label for="ear-angle">움직임 크기</label><output id="ear-angle-value" for="ear-angle">3 / 5</output></div>
+                <input id="ear-angle" type="range" min="1" max="5" value="3">
+                <button type="button" id="listen-preview" class="secondary" aria-pressed="false">듣기</button>
+              </div>
+            </fieldset>
+            <fieldset class="ability-card">
+              <label class="ability-choice"><input id="use-sound" type="checkbox" aria-controls="sound-options"> 소리 내기</label>
+              <div id="sound-options" class="ability-options" hidden>
+                <div class="ability-setting"><label for="sound-pitch">소리 높낮이</label><output id="sound-pitch-value" for="sound-pitch">3 / 5</output></div>
+                <input id="sound-pitch" type="range" min="1" max="5" value="3">
+                <button type="button" id="sound-preview" class="secondary">소리 내기</button>
+              </div>
+            </fieldset>
+            <fieldset class="ability-card">
+              <label class="ability-choice"><input id="use-movement" type="checkbox" aria-controls="movement-options" disabled> 녹화한 동작</label>
+              <p id="movement-help">동작을 녹화하면 붙일 수 있어요.</p>
+              <div id="movement-options" class="ability-options" hidden>
+                <div class="ability-setting"><label for="motion-speed">동작 속도</label><output id="motion-speed-value" for="motion-speed">1배</output></div>
+                <input id="motion-speed" type="range" min="0.5" max="1.5" step="0.25" value="1">
+                <button type="button" id="movement-preview" class="secondary">동작 보기</button>
+              </div>
+            </fieldset>
+          </div>
+          <p id="ability-status" class="ability-status" role="status" hidden></p>
           <button type="button" data-step="place" class="primary bottom-action">정원에 놓기로</button>
         </section>
 
         <section id="panel-place" class="panel" hidden>
           <h2>생명체가 살 자리</h2>
-          <p>고른 자리를 비추고 화면을 터치해요. 내가 만든 생명체가 그 자리에서 움직여요.</p>
+          <p>고른 자리를 비추고 화면을 터치해요. 생명체를 놓은 뒤 붙인 기능을 써 봐요.</p>
           <label for="place-note">고른 자리와 그 이유</label>
           <textarea id="place-note" rows="3" maxlength="180" placeholder="이 자리를 고른 이유를 적어요."></textarea>
           <p id="place-status" class="status" aria-live="polite"></p>
@@ -101,6 +145,10 @@
   <section id="ar-overlay" class="ar-overlay" aria-label="정원에서 AR 배치" hidden>
     <canvas id="ar-canvas" aria-label="정원의 바닥을 탭해 캐릭터를 배치"></canvas>
     <div class="ar-top"><button type="button" id="close-ar">편집으로 돌아가기</button><p id="ar-status" aria-live="polite"></p></div>
+    <div class="ar-abilities" id="ar-abilities" hidden>
+      <button type="button" id="listen-ar" aria-pressed="false" hidden>듣기</button>
+      <button type="button" id="sound-ar" hidden>소리 내기</button>
+    </div>
     <div class="ar-actions">
       <button type="button" id="smaller" aria-label="캐릭터 작게">−</button>
       <button type="button" id="larger" aria-label="캐릭터 크게">+</button>

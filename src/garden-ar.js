@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {partReaction} from './avatar.js';
 
 const engineURL='https://cdn.jsdelivr.net/npm/@8thwall/engine-binary@1.0.0/dist/xr.js';
 let enginePromise;
@@ -49,14 +50,15 @@ export function positionOnFloor(camera,x,y) {
 }
 
 export class GardenAR {
-  constructor(canvas,status) {
+  constructor(canvas,status,onPlacement) {
     this.canvas=canvas;
     this.status=status;
+    this.onPlacement=onPlacement;
     this.generation=0;
     this.place=this.place.bind(this);
   }
 
-  async open(model,clip) {
+  async open(model,clip,{reaction,speed=1}={}) {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('카메라를 사용할 수 있는 HTTPS 주소에서 열어 주세요.');
     this.stop();
     const generation=this.generation;
@@ -79,8 +81,12 @@ export class GardenAR {
     this.placed=false;
     this.tracked=false;
     this.lastFrame=null;
-    this.mixer=new THREE.AnimationMixer(model);
-    this.mixer.clipAction(clip).play();
+    this.reaction=reaction ? partReaction(model,reaction.part) : null;
+    this.reactionSize=reaction?.size??0;
+    this.reactionActive=false;
+    this.reactionAmount=0;
+    this.mixer=clip ? new THREE.AnimationMixer(model) : null;
+    if (clip) this.mixer.clipAction(clip).setEffectiveTimeScale(speed).play();
     const cameraFeed=xr.GlTextureRenderer.pipelineModule();
     const three=xr.Threejs.pipelineModule();
     const tracking=xr.XrController.pipelineModule();
@@ -116,11 +122,19 @@ export class GardenAR {
         const tracked=processCpuResult?.reality?.trackingStatus==='NORMAL';
         if (tracked!==session.tracked) {
           session.tracked=tracked;
-          session.status(tracked?'생명체를 놓을 자리를 터치해요.':'바닥을 천천히 비춰 위치를 다시 찾고 있어요.');
+          session.status(tracked
+            ? session.placed?'생명체를 놓았어요.':'생명체를 놓을 자리를 터치해요.'
+            : '바닥을 천천히 비춰 위치를 다시 찾고 있어요.');
         }
         const now=performance.now();
         if (session.placed && session.lastFrame!==null) {
-          session.mixer.update(Math.min((now-session.lastFrame)/1000,.065));
+          const elapsed=Math.min((now-session.lastFrame)/1000,.065);
+          session.mixer?.update(elapsed);
+          if (session.reaction) {
+            const target=session.reactionActive?session.reactionSize:0;
+            session.reactionAmount=THREE.MathUtils.damp(session.reactionAmount,target,13,elapsed);
+            session.reaction(session.reactionAmount);
+          }
         }
         session.lastFrame=now;
       },
@@ -161,8 +175,10 @@ export class GardenAR {
     this.avatar.position.copy(position);
     this.avatar.rotation.y=Math.atan2(this.camera.position.x-position.x,this.camera.position.z-position.z);
     this.avatar.visible=true;
+    const firstPlacement=!this.placed;
     this.placed=true;
-    this.mixer.setTime(0);
+    this.mixer?.setTime(0);
+    if (firstPlacement) this.onPlacement?.(true);
     this.status('생명체를 놓았어요. 위치, 크기, 방향을 바꿔 볼 수 있어요.');
   }
 
@@ -174,10 +190,20 @@ export class GardenAR {
     if (this.placed) this.avatar.rotation.y+=Math.PI/6;
   }
 
+  toggleReaction() {
+    if (!this.placed || !this.reaction) return false;
+    this.reactionActive=!this.reactionActive;
+    return this.reactionActive;
+  }
+
   reset() {
     if (!this.avatar) return;
     this.avatar.visible=false;
     this.placed=false;
+    this.reactionActive=false;
+    this.reactionAmount=0;
+    this.reaction?.(0);
+    this.onPlacement?.(false);
     this.status('새로 놓을 자리를 터치해요.');
   }
 
@@ -185,6 +211,10 @@ export class GardenAR {
     this.generation++;
     this.canvas.removeEventListener('pointerup',this.place);
     this.mixer?.stopAllAction();
+    this.mixer=null;
+    this.reaction=null;
+    this.placed=false;
+    this.onPlacement?.(false);
     this.scene?.remove(this.avatar);
     this.scene=null;
     this.avatar=null;

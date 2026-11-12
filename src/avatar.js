@@ -17,6 +17,23 @@ const neighbors = new WeakMap();
 const stone = '#e4ded1';
 const slate = '#365052';
 const gold = '#bc873e';
+const earSpread=.68;
+
+function listeningEars(model) {
+  const left=model.getObjectByName('EarL');
+  const right=model.getObjectByName('EarR');
+  return amount=>{
+    const spread=earSpread*(1-amount);
+    left.rotation.z=-spread;
+    right.rotation.z=spread;
+  };
+}
+
+export function partReaction(model,part) {
+  if (part==='ears') return listeningEars(model);
+  const pivot=model.getObjectByName('ExtensionPivot');
+  return amount=>{pivot.rotation.z=pivot.userData.restAngle+.9*amount;};
+}
 
 function tint(geometry,color) {
   const count=geometry.getAttribute('position').count;
@@ -69,6 +86,37 @@ export function createAvatar({example=false}={}) {
   const pelvis=joint(model,'Pelvis',0,.88,0);
   const spine=joint(pelvis,'Spine',0,.23,0);
   const head=joint(spine,'Head',0,.57,0);
+  const ears=[1,-1].map((side,index)=>{
+    const ear=new THREE.Group();
+    ear.name=index===0?'EarL':'EarR';
+    ear.rotation.z=-side*earSpread;
+    head.add(ear);
+    return ear;
+  });
+  const extension=new THREE.Group();
+  extension.name='ExtensionPivot';
+  let extensionPlace='top';
+  function positionExtension(place=extensionPlace) {
+    extensionPlace=place;
+    const hasHead=parts.has('head');
+    const onHead=hasHead && (place==='top' || place==='front');
+    (onHead?head:spine).add(extension);
+    const positions={
+      top:[0,onHead?.42:.45,0],front:[0,onHead?.14:.03,onHead?.30:.45],
+      side:[.45,.035,0],back:[0,-.14,-.43],
+    };
+    extension.position.set(...positions[place]);
+    const tilt={front:1.05,back:-1.15};
+    extension.rotation.set(tilt[place]??0,0,place==='side'?-1.05:0);
+    extension.userData.restAngle=extension.rotation.z;
+  }
+  positionExtension();
+  function positionEars() {
+    const hasHead=parts.has('head');
+    ears[0].position.set(hasHead?.255:.36,hasHead?.31:-.28,.05);
+    ears[1].position.set(-ears[0].position.x,ears[0].position.y,ears[0].position.z);
+  }
+  positionEars();
   for (const [side,sign] of [['L',1],['R',-1]]) {
     const arm=joint(spine,'UpperArm'+side,sign*.32,.315,0);
     arm.rotation.z=sign*.26;
@@ -115,6 +163,12 @@ export function createAvatar({example=false}={}) {
     const created=[];
     if (kind==='head') {
       created.push(sculptable(head,'Head clay',volume(.33,.35,.34),[0,.133,0]));
+    } else if (kind==='ears') {
+      for (const ear of ears) {
+        created.push(sculptable(ear,ear.name+' clay',volume(.115,.205,.073),[0,.135,0]));
+      }
+    } else if (kind==='extension') {
+      created.push(sculptable(extension,'Moving clay',volume(.145,.231,.132),[0,.135,0]));
     } else if (kind==='arms' || kind==='legs') {
       const isLeg=kind==='legs';
       for (const side of ['L','R']) {
@@ -125,6 +179,10 @@ export function createAvatar({example=false}={}) {
     }
     if (!created.length) return false;
     parts.set(kind,created);
+    if (kind==='head') {
+      positionEars();
+      positionExtension();
+    }
     return true;
   }
 
@@ -139,6 +197,10 @@ export function createAvatar({example=false}={}) {
       if (index!==-1) surfaces.splice(index,1);
     }
     parts.delete(kind);
+    if (kind==='head') {
+      positionEars();
+      positionExtension();
+    }
   }
 
   if (!example) {
@@ -186,7 +248,7 @@ export function createAvatar({example=false}={}) {
   }
 
   const rest=Object.fromEntries(Object.entries(joints).map(([name,bone])=>[name,bone.quaternion.clone()]));
-  return {model,joints,rest,surfaces,parts,addPart,removePart};
+  return {model,joints,rest,surfaces,parts,addPart,removePart,positionExtension};
 }
 
 export function resetPose(avatar) {
@@ -296,6 +358,8 @@ export function snapshotModel(avatar) {
   for (const [name,rotation] of Object.entries(avatar.rest)) {
     model.getObjectByName(name).quaternion.copy(rotation);
   }
+  partReaction(model,'ears')(0);
+  partReaction(model,'extension')(0);
   return model;
 }
 
