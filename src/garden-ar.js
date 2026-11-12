@@ -111,7 +111,7 @@ export class GardenAR {
         const tracked=processCpuResult?.reality?.trackingStatus==='NORMAL';
         if (tracked!==session.tracked) {
           session.tracked=tracked;
-          session.status(tracked?'정원 바닥에서 동물이 살 자리를 터치해요.':'바닥을 천천히 비춰 위치를 다시 찾고 있어요.');
+          session.status(tracked?'크리쳐를 놓을 자리를 터치해요.':'바닥을 천천히 비춰 위치를 다시 찾고 있어요.');
         }
         const now=performance.now();
         if (session.placed && session.lastFrame!==null) {
@@ -158,7 +158,7 @@ export class GardenAR {
     this.avatar.visible=true;
     this.placed=true;
     this.mixer.setTime(0);
-    this.status('동물을 놓았어요. 자리를 다시 터치하거나 크기와 방향을 바꿔 볼 수 있어요.');
+    this.status('크리쳐를 놓았어요. 위치, 크기, 방향을 바꿔 볼 수 있어요.');
   }
 
   resize(factor) {

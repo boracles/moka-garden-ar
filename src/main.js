@@ -8,11 +8,11 @@ import {GardenAR,warmUpAR} from './garden-ar.js';
 
 const ui=id=>document.getElementById(id);
 const intro = {
-  make:'바나바와 함께 실험실을 나온 생명체를 상상해요. 정원에서 본 조각과 내 특징을 바탕으로 그 모습을 빚어요.',
-  move:'내 특징이 잘 드러나는 동작을 하나 정하고, 캐릭터에 입혀요.',
-  place:'모카가든에서 고른 자리에 동물 자화상을 놓고, 어떤 모습으로 지내는지 살펴봐요.',
+  make:'실험실을 나온 크리쳐들이 모카가든에 산다고 상상해요. 그중 하나를 내 특징을 담아 빚어요.',
+  move:'내 특징이 잘 드러나는 동작을 골라 크리쳐에 입혀요.',
+  place:'모카가든에서 내 크리쳐가 살 자리를 골라요.',
 };
-const labels={make:'형태 편집 중',move:'동작 미리 보기',place:'완성한 동물 자화상'};
+const labels={make:'형태 편집 중',move:'동작 미리 보기',place:'내 크리쳐'};
 const avatar=createAvatar();
 const scene=new THREE.Scene();
 scene.add(avatar.model);
@@ -161,7 +161,7 @@ function setStep(value) {
   if (orbit) orbit.enabled=step!=='make' || tool==='orbit';
   if (step==='place') {
     ui('place-status').textContent=motionClip
-      ? '정원에서 태블릿을 들고, 동물이 살 자리를 찾아봐요.'
+      ? '정원에서 고른 자리를 태블릿으로 비춰요.'
       : '동작을 먼저 녹화하면 정원에 놓을 수 있어요.';
     if (motionClip && matchMedia('(pointer: coarse)').matches) warmUpAR().catch(()=>{});
   }
