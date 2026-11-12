@@ -2,17 +2,17 @@ import './style.css';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
-import {createAvatar,deform,palette,resetPose,rigPreview,setColor,setSurface,snapshotModel} from './avatar.js';
+import {applyBrush,createAvatar,palette,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
 import {MotionCapture} from './motion.js';
 import {GardenAR,warmUpAR} from './garden-ar.js';
 
 const ui=id=>document.getElementById(id);
 const intro = {
-  make:'실험실을 나온 크리쳐들이 모카가든에 산다고 상상해요. 그중 하나를 내 특징을 담아 빚어요.',
-  move:'내 특징이 잘 드러나는 동작을 골라 크리쳐에 입혀요.',
-  place:'모카가든에서 내 크리쳐가 살 자리를 골라요.',
+  make:'실험실을 탈출한 생명체들이 모카가든에 자리 잡았어요. 그중 하나에 내 특징을 담아 봐요.',
+  move:'내 특징이 잘 드러나는 동작을 골라 내가 만든 생명체에 입혀요.',
+  place:'모카가든에서 내가 만든 생명체가 살 자리를 골라요.',
 };
-const labels={make:'형태 편집 중',move:'동작 미리 보기',place:'내 크리쳐'};
+const labels={make:'형태 편집 중',move:'동작 미리 보기',place:'내 자화상'};
 const avatar=createAvatar();
 const scene=new THREE.Scene();
 scene.add(avatar.model);
@@ -45,7 +45,7 @@ const rim=new THREE.DirectionalLight(0xe1fff0,2.05);
 rim.position.set(3,4,-4);
 scene.add(key,rim,new THREE.HemisphereLight(0xfff7e5,0x829e8b,2.12));
 const plinth=new THREE.Mesh(new THREE.CylinderGeometry(1.03,1.06,.12,90),new THREE.MeshStandardMaterial({
-  color:'#a4bca5',roughness:.95,
+  color:'#859e88',roughness:.95,
 }));
 plinth.position.y=-.018;
 plinth.receiveShadow=true;
@@ -84,6 +84,7 @@ if (orbit) {
 
 let step='make';
 let tool='pull';
+const paintColor=new THREE.Color(palette[1][1]);
 let motionClip=null;
 let mixer=null;
 let cameraRequest=0;
@@ -172,15 +173,18 @@ for (const button of document.querySelectorAll('[data-step]')) {
   button.addEventListener('click',()=>setStep(button.dataset.step));
 }
 
+function selectTool(value) {
+  tool=value;
+  stopPreview();
+  if (orbit) orbit.enabled=tool==='orbit';
+  ui('viewport').classList.toggle('orbit-mode',tool==='orbit');
+  for (const item of document.querySelectorAll('[data-tool]')) {
+    item.setAttribute('aria-pressed',String(item.dataset.tool===tool));
+  }
+}
+
 for (const button of document.querySelectorAll('[data-tool]')) {
-  button.addEventListener('click',()=>{
-    tool=button.dataset.tool;
-    stopPreview();
-    if (orbit) orbit.enabled=tool==='orbit';
-    for (const item of document.querySelectorAll('[data-tool]')) {
-      item.setAttribute('aria-pressed',String(item===button));
-    }
-  });
+  button.addEventListener('click',()=>selectTool(button.dataset.tool));
 }
 
 for (const [name,color] of palette) {
@@ -190,9 +194,10 @@ for (const [name,color] of palette) {
   button.title=name;
   button.style.setProperty('--swatch',color);
   button.setAttribute('aria-label',name);
-  button.setAttribute('aria-pressed',String(color===palette[0][1]));
+  button.setAttribute('aria-pressed',String(color===palette[1][1]));
   button.addEventListener('click',()=>{
-    setColor(avatar,color);
+    paintColor.set(color);
+    selectTool('paint');
     for (const item of ui('colors').children) item.setAttribute('aria-pressed',String(item===button));
   });
   ui('colors').append(button);
@@ -207,13 +212,26 @@ if (renderer) {
     raycaster.setFromCamera(p,camera);
     return raycaster.intersectObjects(avatar.surfaces,false)[0];
   }
+  function makeMark(hit,distance) {
+    const geometry=hit.object.geometry;
+    if (!brush.changes.has(geometry)) {
+      brush.changes.set(geometry,geometry.getAttribute(brush.attribute).array.slice());
+    }
+    applyBrush(hit,brush.tool,brush.radius,distance,brush.color);
+  }
   canvas.addEventListener('pointerdown',event=>{
     if (step!=='make' || tool==='orbit' || brush || event.button>0) return;
     stopPreview();
     const hit=intersect(event);
     if (!hit) return;
     canvas.setPointerCapture(event.pointerId);
-    brush={id:event.pointerId,x:event.clientX,y:event.clientY,changes:new Map()};
+    brush={
+      id:event.pointerId,x:event.clientX,y:event.clientY,changes:new Map(),tool,
+      attribute:tool==='paint'?'color':'position',
+      radius:.065+Number(ui('brush-size').value)*.021,
+      color:paintColor.clone(),
+    };
+    if (tool==='paint') makeMark(hit,1);
   });
   canvas.addEventListener('pointermove',event=>{
     if (event.pointerId!==brush?.id) return;
@@ -223,14 +241,12 @@ if (renderer) {
     brush.y=event.clientY;
     const hit=intersect(event);
     if (!hit) return;
-    const geometry=hit.object.geometry;
-    if (!brush.changes.has(geometry)) brush.changes.set(geometry,geometry.getAttribute('position').array.slice());
-    deform(hit,distance,tool==='push'?-1:1);
+    makeMark(hit,distance);
   });
   function finishBrush(event) {
     if (event.pointerId!==brush?.id) return;
     if (brush.changes.size) {
-      undoStack.push(brush.changes);
+      undoStack.push({attribute:brush.attribute,changes:brush.changes});
       if (undoStack.length>25) undoStack.shift();
       ui('undo').disabled=false;
     }
@@ -241,7 +257,9 @@ if (renderer) {
 
 ui('undo').addEventListener('click',()=>{
   const last=undoStack.pop();
-  if (last) for (const [geometry,positions] of last) setSurface(geometry,positions);
+  if (last) {
+    for (const [geometry,values] of last.changes) restoreBrushAttribute(geometry,last.attribute,values);
+  }
   ui('undo').disabled=!undoStack.length;
 });
 

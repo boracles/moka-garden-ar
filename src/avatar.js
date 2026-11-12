@@ -1,27 +1,24 @@
 import * as THREE from 'three';
 
 export const palette = [
-  ['잎사귀 초록', '#719b75'],
-  ['노을 분홍', '#ce847b'],
-  ['푸른 회색', '#7a98ad'],
-  ['흙 갈색', '#b48563'],
-  ['연보라', '#9a89ae'],
+  ['도자기색', '#e6ddc9'],
+  ['황토 금색', '#c48b37'],
+  ['짙은 녹색', '#34574c'],
+  ['붉은 흙', '#a34f3d'],
+  ['먹색', '#282e31'],
+  ['회청색', '#77929a'],
 ];
 
-const clay = new THREE.MeshStandardMaterial({color:palette[0][1],roughness:.75});
-const belly = new THREE.MeshStandardMaterial({color:'#d9dfb5',roughness:.84});
-const blush = new THREE.MeshStandardMaterial({color:'#db9e89',roughness:.85});
-const eyes = new THREE.MeshStandardMaterial({color:'#24332b',roughness:.25});
-const shine = new THREE.MeshBasicMaterial({color:'#fcfff1'});
-const dark = new THREE.MeshStandardMaterial({color:'#3a5141',roughness:.7});
+const ceramic = new THREE.MeshStandardMaterial({vertexColors:true,roughness:.48});
+const brass = new THREE.MeshStandardMaterial({vertexColors:true,roughness:.34,metalness:.28});
+const ink = new THREE.MeshStandardMaterial({color:'#232a26',roughness:.47});
+const neighbors = new WeakMap();
 
 export function createAvatar() {
   const model = new THREE.Group();
   model.name = 'GardenCreature';
   const joints = {};
   const surfaces = [];
-  const skin = clay.clone();
-  const soft = belly.clone();
 
   function joint(parent,name,x=0,y=0,z=0) {
     const bone = new THREE.Bone();
@@ -32,65 +29,95 @@ export function createAvatar() {
     return bone;
   }
 
-  function oval(parent,name,dimensions,position,material=skin,editable=false) {
-    const geometry = new THREE.SphereGeometry(1,28,20);
+  function form(parent,name,dimensions,position,options={}) {
+    const {color=palette[0][1],power=1,material=ceramic,editable=true}=options;
+    const geometry=new THREE.SphereGeometry(1,48,32);
+    const positions=geometry.getAttribute('position');
+    if (power!==1) {
+      for (let i=0;i<positions.array.length;i++) {
+        const value=positions.array[i];
+        positions.array[i]=Math.sign(value)*Math.abs(value)**power;
+      }
+    }
     geometry.scale(...dimensions);
-    const mesh = new THREE.Mesh(geometry,material);
-    mesh.name = name;
+    if (power!==1) geometry.computeVertexNormals();
+    if (material.vertexColors) {
+      const paint=new THREE.Color(color);
+      const colors=new Float32Array(positions.count*3);
+      for (let i=0;i<positions.count;i++) paint.toArray(colors,i*3);
+      geometry.setAttribute('color',new THREE.BufferAttribute(colors,3));
+    }
+    const mesh=new THREE.Mesh(geometry,material);
+    mesh.name=name;
     mesh.position.set(...position);
+    mesh.castShadow=true;
     parent.add(mesh);
-    mesh.castShadow = true;
     if (editable) surfaces.push(mesh);
     return mesh;
   }
 
-  const pelvis = joint(model,'Pelvis',0,.89,0);
-  const spine = joint(pelvis,'Spine',0,.25,0);
-  const head = joint(spine,'Head',0,.51,0);
-  oval(pelvis,'Hips',[.33,.31,.245],[0,.06,0],skin,true);
-  oval(spine,'Torso',[.41,.44,.28],[0,-.035,0],skin,true);
-  oval(spine,'Belly',[.26,.31,.11],[0,-.052,.215],soft,true);
-  oval(head,'Face',[.43,.37,.336],[0,.135,.014],skin,true);
-  const nose = oval(head,'Nose',[.052,.035,.042],[0,.12,.339],dark);
-  nose.rotation.z = -.07;
-  const smile = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-.078,.065,.326),new THREE.Vector3(-.037,.045,.343),
-    new THREE.Vector3(0,.053,.348),new THREE.Vector3(.038,.045,.343),
-    new THREE.Vector3(.08,.067,.326),
-  ]);
-  const mouth = new THREE.Mesh(new THREE.TubeGeometry(smile,16,.009,8,false),dark);
-  head.add(mouth);
+  const pelvis=joint(model,'Pelvis',0,.89,0);
+  const spine=joint(pelvis,'Spine',0,.27,0);
+  const head=joint(spine,'Head',0,.55,0);
+  form(pelvis,'Lower body',[.31,.29,.26],[0,.05,0],{power:.91});
+  form(spine,'Vessel body',[.44,.52,.29],[0,-.025,0],{power:.90});
+  form(spine,'Chest accent',[.13,.17,.038],[.095,-.095,.294],{
+    color:'#c48b37',material:brass,
+  }).rotation.z=-.33;
+  form(spine,'Neck ring',[.215,.065,.204],[0,.438,0],{
+    color:'#34574c',power:.78,
+  });
+
+  form(head,'Ceramic head',[.455,.405,.346],[.018,.155,0],{
+    power:.77,
+  }).rotation.z=-.08;
+  form(head,'Face profile',[.182,.071,.110],[.105,.054,.333],{
+    color:'#34574c',power:.66,
+  }).rotation.z=.18;
+  form(head,'Left eye',[.022,.032,.020],[.149,.228,.344],{material:ink,editable:false});
+  form(head,'Right eye',[.020,.027,.019],[-.098,.245,.348],{material:ink,editable:false});
+
+  const high=joint(head,'EarL',.302,.388,-.045);
+  high.rotation.z=-.58;
+  form(high,'High fin',[.178,.252,.100],[.026,.137,0],{power:.87});
+  form(high,'High fin inset',[.106,.179,.039],[.026,.155,.083],{
+    color:'#c48b37',material:brass,
+  });
+  const low=joint(head,'EarR',-.383,.127,-.024);
+  low.rotation.z=.43;
+  form(low,'Side fin',[.154,.193,.086],[-.061,.057,0],{power:.84});
+  form(low,'Side fin inset',[.088,.100,.032],[-.076,.053,.071],{
+    color:'#34574c',
+  });
 
   for (const [side,sign] of [['L',1],['R',-1]]) {
-    const ear = joint(head,'Ear'+side,sign*.24,.365,-.035);
-    ear.rotation.z = -sign*.31;
-    oval(ear,'OuterEar'+side,[.126,.315,.105],[0,.225,0],skin,true);
-    oval(ear,'InnerEar'+side,[.082,.228,.039],[0,.247,.084],soft,true);
-    oval(head,'Eye'+side,[.056,.070,.031],[sign*.16,.197,.314],eyes);
-    oval(head,'EyeGlint'+side,[.014,.017,.010],[sign*.16-.011,.220,.342],shine);
-    oval(head,'Cheek'+side,[.082,.033,.022],[sign*.246,.103,.291],blush);
+    const arm=joint(spine,'UpperArm'+side,sign*.356,.202,-.035);
+    const lowerArm=joint(arm,'Forearm'+side,0,-.35,0);
+    arm.rotation.z=sign*.31;
+    lowerArm.rotation.x=-.10;
+    form(arm,'Upper arm '+side,[.124,.253,.119],[0,-.149,0],{power:.88});
+    form(lowerArm,'Forearm '+side,[.092,.223,.107],[0,-.130,0],{power:.85});
+    form(lowerArm,'Hand '+side,[.109,.137,.115],[0,-.278,.009],{
+      color:side==='L'?'#c48b37':'#34574c',
+      material:side==='L'?brass:ceramic,
+      power:.72,
+    });
 
-    const arm = joint(spine,'UpperArm'+side,sign*.342,.208,-.011);
-    const lowerArm = joint(arm,'Forearm'+side,0,-.35,0);
-    arm.rotation.z = sign*.31;
-    lowerArm.rotation.x = -.10;
-    oval(arm,'UpperArmClay'+side,[.126,.255,.127],[0,-.158,0],skin,true);
-    oval(lowerArm,'ForearmClay'+side,[.105,.208,.113],[0,-.115,0],skin,true);
-    oval(lowerArm,'Paw'+side,[.115,.125,.121],[0,-.282,.014],soft,true);
-
-    const leg = joint(pelvis,'Thigh'+side,sign*.207,-.17,0);
-    const shin = joint(leg,'Shin'+side,0,-.32,0);
-    leg.rotation.z = sign*.055;
-    oval(leg,'ThighClay'+side,[.148,.222,.147],[0,-.135,0],skin,true);
-    oval(shin,'ShinClay'+side,[.125,.184,.129],[0,-.105,0],skin,true);
-    oval(shin,'Foot'+side,[.151,.094,.227],[0,-.315,.075],skin,true);
+    const leg=joint(pelvis,'Thigh'+side,sign*.203,-.17,0);
+    const shin=joint(leg,'Shin'+side,0,-.32,0);
+    leg.rotation.z=sign*.055;
+    form(leg,'Thigh '+side,[.144,.224,.142],[0,-.132,0],{power:.87});
+    form(shin,'Shin '+side,[.111,.211,.123],[0,-.112,0],{power:.79});
+    form(shin,'Foot '+side,[.133,.096,.202],[0,-.314,.075],{
+      color:'#34574c',power:.70,
+    });
   }
 
-  const tail = joint(pelvis,'Tail',0,-.043,-.23);
-  tail.rotation.x = -.55;
-  oval(tail,'TailClay',[.17,.218,.179],[0,.11,-.065],skin,true);
-  const rest = Object.fromEntries(Object.entries(joints).map(([name,bone])=>[name,bone.quaternion.clone()]));
-  return {model,joints,rest,surfaces,skin};
+  const tail=joint(pelvis,'Tail',0,.014,-.246);
+  tail.rotation.x=-.44;
+  form(tail,'Back fin',[.103,.197,.103],[0,.09,-.06],{color:'#34574c'});
+  const rest=Object.fromEntries(Object.entries(joints).map(([name,bone])=>[name,bone.quaternion.clone()]));
+  return {model,joints,rest,surfaces};
 }
 
 export function resetPose(avatar) {
@@ -100,46 +127,95 @@ export function resetPose(avatar) {
   avatar.model.updateMatrixWorld(true);
 }
 
-export function setColor(avatar,color) {
-  avatar.skin.color.set(color);
-}
-
-export function setSurface(geometry,positions) {
-  const position = geometry.getAttribute('position');
-  position.array.set(positions);
-  position.needsUpdate = true;
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  geometry.computeBoundingBox();
-}
-
-export function deform(hit,distance,sign) {
-  const mesh = hit.object;
-  const geometry = mesh.geometry;
-  const positions = geometry.getAttribute('position').array;
-  const center = mesh.worldToLocal(hit.point.clone());
-  const normal = hit.face.normal.clone().normalize();
-  const radius = .145;
-  const radiusSquared = radius*radius;
-  const amount = Math.min(.034,Math.max(.012,distance*.003)) * sign;
-  const changed = new Float32Array(positions);
-  for(let i=0;i<positions.length;i+=3) {
-    const dx = positions[i]-center.x;
-    const dy = positions[i+1]-center.y;
-    const dz = positions[i+2]-center.z;
-    const d = dx*dx+dy*dy+dz*dz;
-    if (d>=radiusSquared) continue;
-    const influence = (1-d/radiusSquared)**2*amount;
-    changed[i] += normal.x*influence;
-    changed[i+1] += normal.y*influence;
-    changed[i+2] += normal.z*influence;
+function refreshAttribute(geometry,key) {
+  geometry.getAttribute(key).needsUpdate=true;
+  if (key==='position') {
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    geometry.computeBoundingBox();
   }
-  setSurface(geometry,changed);
+}
+
+export function restoreBrushAttribute(geometry,key,values) {
+  geometry.getAttribute(key).array.set(values);
+  refreshAttribute(geometry,key);
+}
+
+function surfaceNeighbors(geometry) {
+  if (neighbors.has(geometry)) return neighbors.get(geometry);
+  const positions=geometry.getAttribute('position');
+  const groupIds=[];
+  const groups=[];
+  const groupByPosition=new Map();
+  for (let i=0;i<positions.count;i++) {
+    const key=[positions.getX(i),positions.getY(i),positions.getZ(i)]
+      .map(value=>Math.round(value*100000)).join(',');
+    let id=groupByPosition.get(key);
+    if (id===undefined) {
+      id=groups.length;
+      groups.push({vertex:i,links:new Set()});
+      groupByPosition.set(key,id);
+    }
+    groupIds.push(id);
+  }
+  const faces=geometry.index.array;
+  for (let i=0;i<faces.length;i+=3) {
+    const face=[groupIds[faces[i]],groupIds[faces[i+1]],groupIds[faces[i+2]]];
+    for (let j=0;j<3;j++) {
+      const a=face[j], b=face[(j+1)%3];
+      if (a===b) continue;
+      groups[a].links.add(b);
+      groups[b].links.add(a);
+    }
+  }
+  const links=groups.map(group=>[...group.links].map(id=>groups[id].vertex));
+  const result=groupIds.map(id=>links[id]);
+  neighbors.set(geometry,result);
+  return result;
+}
+
+export function applyBrush(hit,tool,radius,distance,color) {
+  const geometry=hit.object.geometry;
+  const key=tool==='paint'?'color':'position';
+  const attribute=geometry.getAttribute(key);
+  const positions=geometry.getAttribute('position').array;
+  const center=hit.object.worldToLocal(hit.point.clone());
+  const normal=hit.face.normal.clone().normalize();
+  const radiusSquared=radius*radius;
+  const strength=Math.min(.027,Math.max(.008,distance*.0022))*(tool==='push'?-1:1);
+  const adjacency=tool==='smooth'?surfaceNeighbors(geometry):null;
+  const output=attribute.array.slice();
+  for (let i=0;i<positions.length;i+=3) {
+    const dx=positions[i]-center.x;
+    const dy=positions[i+1]-center.y;
+    const dz=positions[i+2]-center.z;
+    const d=dx*dx+dy*dy+dz*dz;
+    if (d>=radiusSquared) continue;
+    const influence=(1-d/radiusSquared)**2;
+    if (tool==='paint') {
+      const coverage=Math.min(1,influence*2.15);
+      output[i]+=(color.r-output[i])*coverage;
+      output[i+1]+=(color.g-output[i+1])*coverage;
+      output[i+2]+=(color.b-output[i+2])*coverage;
+    } else if (adjacency) {
+      const adjacent=adjacency[i/3];
+      if (!adjacent.length) continue;
+      for (let k=0;k<3;k++) {
+        const mean=adjacent.reduce((sum,vertex)=>sum+positions[vertex*3+k],0)/adjacent.length;
+        output[i+k]+=(mean-positions[i+k])*influence*.58;
+      }
+    } else {
+      output[i]+=normal.x*strength*influence;
+      output[i+1]+=normal.y*strength*influence;
+      output[i+2]+=normal.z*strength*influence;
+    }
+  }
+  restoreBrushAttribute(geometry,key,output);
 }
 
 export function snapshotModel(avatar) {
-  const model = avatar.model.clone(true);
-  model.name = 'GardenCreature';
+  const model=avatar.model.clone(true);
+  model.name='GardenCreature';
   model.position.set(0,0,0);
   model.rotation.set(0,0,0);
   model.scale.setScalar(1);
@@ -151,10 +227,10 @@ export function snapshotModel(avatar) {
 
 export function rigPreview() {
   const times=[0,.48,.96,1.5];
-  const euler = new THREE.Euler();
-  const rotation = new THREE.Quaternion();
+  const euler=new THREE.Euler();
+  const rotation=new THREE.Quaternion();
   function track(name,angles) {
-    const values = angles.flatMap(values=>rotation.setFromEuler(euler.set(...values)).toArray());
+    const values=angles.flatMap(values=>rotation.setFromEuler(euler.set(...values)).toArray());
     return new THREE.QuaternionKeyframeTrack(name+'.quaternion',times,values);
   }
   return new THREE.AnimationClip('Rig preview',1.5,[
