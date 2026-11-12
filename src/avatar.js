@@ -18,6 +18,8 @@ const stone = '#e4ded1';
 const slate = '#365052';
 const gold = '#bc873e';
 const earSpread=.68;
+const extensionJoints=['ClayBase','ClayMiddle','ClayTip'];
+const bendAngles=[.10,.66,.92];
 
 function listeningEars(model) {
   const left=model.getObjectByName('EarL');
@@ -31,8 +33,21 @@ function listeningEars(model) {
 
 export function partReaction(model,part) {
   if (part==='ears') return listeningEars(model);
-  const pivot=model.getObjectByName('ExtensionPivot');
-  return amount=>{pivot.rotation.z=pivot.userData.restAngle+.9*amount;};
+  const bones=extensionJoints.map(name=>model.getObjectByName(name));
+  return amount=>{
+    bones.forEach((bone,index)=>{bone.rotation.z=bendAngles[index]*amount;});
+  };
+}
+
+export function extensionClip(samples) {
+  const times=samples.map(sample=>sample.time);
+  const axis=new THREE.Vector3(0,0,1);
+  const rotation=new THREE.Quaternion();
+  const tracks=extensionJoints.map((name,index)=>{
+    const values=samples.flatMap(({amount})=>rotation.setFromAxisAngle(axis,bendAngles[index]*amount).toArray());
+    return new THREE.QuaternionKeyframeTrack(name+'.quaternion',times,values);
+  });
+  return new THREE.AnimationClip('Moving clay',times.at(-1),tracks);
 }
 
 function tint(geometry,color) {
@@ -45,6 +60,27 @@ function tint(geometry,color) {
 
 function volume(x,y,z) {
   return new THREE.SphereGeometry(1,48,40).scale(x,y,z);
+}
+
+function writeSkin(geometry,weightsForHeight) {
+  const position=geometry.getAttribute('position');
+  const weights=new Float32Array(position.count*4);
+  const indices=new Uint16Array(position.count*4);
+  for (let i=0;i<position.count;i++) {
+    for (const [joint,weight] of weightsForHeight(position.getY(i)).entries()) {
+      indices[i*4+joint]=joint;
+      weights[i*4+joint]=weight;
+    }
+  }
+  geometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(indices,4));
+  geometry.setAttribute('skinWeight',new THREE.BufferAttribute(weights,4));
+}
+
+function fitLimbSkin(geometry,hinge) {
+  writeSkin(geometry,y=>{
+    const blend=THREE.MathUtils.smoothstep(-y,hinge-.145,hinge+.145);
+    return [1-blend,blend];
+  });
 }
 
 export function createAvatar({example=false}={}) {
@@ -95,6 +131,12 @@ export function createAvatar({example=false}={}) {
   });
   const extension=new THREE.Group();
   extension.name='ExtensionPivot';
+  const extensionBones=extensionJoints.map(name=>Object.assign(new THREE.Bone(),{name}));
+  extension.add(extensionBones[0]);
+  extensionBones[0].add(extensionBones[1]);
+  extensionBones[1].add(extensionBones[2]);
+  extensionBones[1].position.y=.18;
+  extensionBones[2].position.y=.21;
   let extensionPlace='top';
   function positionExtension(place=extensionPlace) {
     extensionPlace=place;
@@ -108,7 +150,6 @@ export function createAvatar({example=false}={}) {
     extension.position.set(...positions[place]);
     const tilt={front:1.05,back:-1.15};
     extension.rotation.set(tilt[place]??0,0,place==='side'?-1.05:0);
-    extension.userData.restAngle=extension.rotation.z;
   }
   positionExtension();
   function positionEars() {
@@ -131,18 +172,7 @@ export function createAvatar({example=false}={}) {
   function limb(name,upper,lower,isLeg,color=stone) {
     const geometry=volume(isLeg?.136:.132,isLeg?.425:.398,isLeg?.134:.124);
     geometry.translate(0,isLeg?-.291:-.294,0);
-    const position=geometry.getAttribute('position');
-    const weights=new Float32Array(position.count*4);
-    const indices=new Uint16Array(position.count*4);
-    const hinge=-lower.position.y;
-    for (let i=0;i<position.count;i++) {
-      const blend=THREE.MathUtils.smoothstep(-position.getY(i),hinge-.145,hinge+.145);
-      indices[i*4+1]=1;
-      weights[i*4]=1-blend;
-      weights[i*4+1]=blend;
-    }
-    geometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(indices,4));
-    geometry.setAttribute('skinWeight',new THREE.BufferAttribute(weights,4));
+    fitLimbSkin(geometry,-lower.position.y);
     tint(geometry,color);
     const mesh=new THREE.SkinnedMesh(geometry,ceramic);
     mesh.name=name;
@@ -158,6 +188,43 @@ export function createAvatar({example=false}={}) {
     return mesh;
   }
 
+  function movingClay() {
+    const geometry=volume(.127,.345,.119).translate(0,.27,0);
+    writeSkin(geometry,y=>{
+      const middle=THREE.MathUtils.smoothstep(y,.06,.29);
+      const tip=THREE.MathUtils.smoothstep(y,.27,.52);
+      return [1-middle,middle*(1-tip),middle*tip];
+    });
+    tint(geometry,stone);
+    const mesh=new THREE.SkinnedMesh(geometry,ceramic);
+    mesh.name='Moving clay';
+    mesh.frustumCulled=false;
+    mesh.castShadow=true;
+    extension.add(mesh);
+    model.updateMatrixWorld(true);
+    mesh.bind(new THREE.Skeleton(extensionBones));
+    surfaces.push(mesh);
+    return mesh;
+  }
+
+  function fitLimbs(kind,position) {
+    for (const mesh of parts.get(kind)??[]) {
+      if (!mesh.isSkinnedMesh) continue;
+      const [,lower]=mesh.skeleton.bones;
+      mesh.geometry.computeBoundingBox();
+      const length=-mesh.geometry.boundingBox.min.y;
+      const hinge=THREE.MathUtils.clamp(length*position,.08,length-.08);
+      const delta=hinge+lower.position.y;
+      lower.position.y=-hinge;
+      for (const foot of lower.children) foot.position.y+=delta;
+      fitLimbSkin(mesh.geometry,hinge);
+      model.updateMatrixWorld(true);
+      mesh.bind(mesh.skeleton);
+      mesh.boundingBox=null;
+      mesh.boundingSphere=null;
+    }
+  }
+
   function addPart(kind) {
     if (example || parts.has(kind)) return false;
     const created=[];
@@ -168,7 +235,7 @@ export function createAvatar({example=false}={}) {
         created.push(sculptable(ear,ear.name+' clay',volume(.115,.205,.073),[0,.135,0]));
       }
     } else if (kind==='extension') {
-      created.push(sculptable(extension,'Moving clay',volume(.145,.231,.132),[0,.135,0]));
+      created.push(movingClay());
     } else if (kind==='arms' || kind==='legs') {
       const isLeg=kind==='legs';
       for (const side of ['L','R']) {
@@ -248,7 +315,7 @@ export function createAvatar({example=false}={}) {
   }
 
   const rest=Object.fromEntries(Object.entries(joints).map(([name,bone])=>[name,bone.quaternion.clone()]));
-  return {model,joints,rest,surfaces,parts,addPart,removePart,positionExtension};
+  return {model,joints,rest,surfaces,parts,addPart,removePart,positionExtension,fitLimbs};
 }
 
 export function resetPose(avatar) {

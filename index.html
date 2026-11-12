@@ -77,6 +77,19 @@
         <section id="panel-move" class="panel" hidden>
           <h2>내 특징이 드러나는 동작</h2>
           <p>내가 잘하거나 자주 하는 일에서 동작 하나를 골라요. 카메라에서 팔과 몸이 보이게 서요.</p>
+          <details id="body-rig" class="ability-card rig-card">
+            <summary>뼈대 맞추기</summary>
+            <p id="rig-help">형태 빚기에서 팔이나 다리를 붙이면 관절을 맞출 수 있어요.</p>
+            <div id="elbow-setting" class="ability-options" hidden>
+              <label for="elbow-position">팔꿈치 위치</label>
+              <input id="elbow-position" type="range" min="30" max="70" value="50">
+            </div>
+            <div id="knee-setting" class="ability-options" hidden>
+              <label for="knee-position">무릎 위치</label>
+              <input id="knee-position" type="range" min="30" max="70" value="50">
+            </div>
+            <p id="rig-guide" hidden>점이 팔꿈치와 무릎에 오도록 슬라이더를 움직여요.</p>
+          </details>
           <div class="control-actions">
             <button type="button" id="open-camera" class="secondary">앞 카메라 켜기</button>
             <button type="button" id="record" class="primary" disabled>3초 녹화</button>
@@ -100,6 +113,12 @@
                   <label for="extension-place">점토 붙일 자리</label>
                   <select id="extension-place"><option value="top">위</option><option value="front">앞</option><option value="side">옆</option><option value="back">뒤</option></select>
                   <button type="button" data-step="make" class="text-button">붙인 점토 더 빚기</button>
+                  <label for="clay-bend">점토 구부리기</label>
+                  <input id="clay-bend" type="range" min="-100" max="100" value="0">
+                  <button type="button" id="record-clay" class="secondary">구부리는 동작 3초 녹화</button>
+                  <button type="button" id="replay-clay" class="secondary" disabled>녹화한 동작 다시 보기</button>
+                  <button type="button" id="download-clay" class="text-button" disabled>3D 작품 저장 (.glb)</button>
+                  <p id="clay-recording-status" role="status">녹화를 누르고 슬라이더를 움직여요.</p>
                 </div>
                 <div class="ability-setting"><label for="ear-angle">움직임 크기</label><output id="ear-angle-value" for="ear-angle">3 / 5</output></div>
                 <input id="ear-angle" type="range" min="1" max="5" value="3">

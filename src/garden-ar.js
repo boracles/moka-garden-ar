@@ -81,12 +81,15 @@ export class GardenAR {
     this.placed=false;
     this.tracked=false;
     this.lastFrame=null;
-    this.reaction=reaction ? partReaction(model,reaction.part) : null;
+    this.reaction=reaction && !reaction.clip ? partReaction(model,reaction.part) : null;
     this.reactionSize=reaction?.size??0;
     this.reactionActive=false;
     this.reactionAmount=0;
-    this.mixer=clip ? new THREE.AnimationMixer(model) : null;
+    this.mixer=clip || reaction?.clip ? new THREE.AnimationMixer(model) : null;
     if (clip) this.mixer.clipAction(clip).setEffectiveTimeScale(speed).play();
+    this.reactionAction=reaction?.clip
+      ? this.mixer.clipAction(reaction.clip).setLoop(THREE.LoopOnce,1)
+      : null;
     const cameraFeed=xr.GlTextureRenderer.pipelineModule();
     const three=xr.Threejs.pipelineModule();
     const tracking=xr.XrController.pipelineModule();
@@ -191,7 +194,12 @@ export class GardenAR {
   }
 
   toggleReaction() {
-    if (!this.placed || !this.reaction) return false;
+    if (!this.placed) return false;
+    if (this.reactionAction) {
+      this.reactionAction.reset().play();
+      return false;
+    }
+    if (!this.reaction) return false;
     this.reactionActive=!this.reactionActive;
     return this.reactionActive;
   }
@@ -203,6 +211,7 @@ export class GardenAR {
     this.reactionActive=false;
     this.reactionAmount=0;
     this.reaction?.(0);
+    this.reactionAction?.stop();
     this.onPlacement?.(false);
     this.status('새로 놓을 자리를 터치해요.');
   }
@@ -213,6 +222,7 @@ export class GardenAR {
     this.mixer?.stopAllAction();
     this.mixer=null;
     this.reaction=null;
+    this.reactionAction=null;
     this.placed=false;
     this.onPlacement?.(false);
     this.scene?.remove(this.avatar);

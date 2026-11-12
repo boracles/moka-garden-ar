@@ -64,6 +64,8 @@ legend,label{font-weight:750;font-size:14px;margin-bottom:8px}
 .ability-choice{display:flex;align-items:center;gap:9px;min-height:30px;margin:0;cursor:pointer}
 .ability-choice input{width:19px;height:19px;margin:0;accent-color:var(--green)}
 .ability-card p,.panel .ability-status{font-size:12px;color:var(--muted);margin:5px 0 0}
+.rig-card{margin-bottom:13px}
+.rig-card summary{min-height:30px;padding-top:4px;font-size:14px;font-weight:750;cursor:pointer}
 .ability-options{display:grid;gap:5px;margin-top:8px}
 .ability-options label{margin:0;font-size:13px}
 .ability-options select{min-height:42px;padding:6px 8px;border:1px solid #aebeb4;border-radius:7px;color:var(--ink);background:var(--cream)}
