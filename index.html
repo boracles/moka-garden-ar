@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4f3eb">
+  <link rel="icon" href="data:,">
+  <title>나를 닮은 정원 생명체 · 모카가든</title>
+</head>
+<body>
+  <header class="masthead">
+    <div class="wordmark">모카가든 워크숍</div>
+    <nav aria-label="워크숍 단계" class="steps">
+      <button type="button" data-step="make" aria-current="step"><span>1</span> 형태 빚기</button>
+      <button type="button" data-step="move"><span>2</span> 동작 녹화</button>
+      <button type="button" data-step="place"><span>3</span> 정원에 놓기</button>
+    </nav>
+  </header>
+
+  <main>
+    <div class="intro">
+      <div><p class="kicker">동물 자화상</p><h1>나를 닮은 정원 생명체</h1></div>
+      <p id="intro-copy">바나바와 함께 실험실을 나온 생명체를 상상해요. 정원에서 본 조각과 내 특징을 바탕으로 그 모습을 빚어요.</p>
+    </div>
+
+    <div class="workspace">
+      <section class="studio" aria-label="캐릭터 미리 보기">
+        <div id="viewport" class="viewport" aria-label="편집할 3D 캐릭터"></div>
+        <div class="studio-meta"><span id="stage-label">형태 편집 중</span><span>앞 · 옆 · 뒤에서 살펴보기</span></div>
+        <p id="graphics-error" class="graphics-error" hidden>이 기기에서 3D 화면을 열 수 없어요. 브라우저의 WebGL 지원을 확인해 주세요.</p>
+        <div id="camera-tile" class="camera-tile" hidden>
+          <video id="motion-video" autoplay muted playsinline aria-label="동작 촬영 미리 보기"></video>
+          <span>카메라 미리 보기</span>
+        </div>
+      </section>
+
+      <aside class="control-panel" aria-label="단계별 활동">
+        <section id="panel-make" class="panel">
+          <h2>어떤 모습으로 빚을까?</h2>
+          <p>몸의 표면을 터치하고 드래그해 모양을 바꿔요.</p>
+          <fieldset><legend>도구</legend>
+            <div class="tool-grid">
+              <button type="button" data-tool="pull" aria-pressed="true">당기기</button>
+              <button type="button" data-tool="push" aria-pressed="false">밀기</button>
+              <button type="button" data-tool="orbit" aria-pressed="false">돌려 보기</button>
+              <button type="button" id="undo" disabled>되돌리기</button>
+            </div>
+          </fieldset>
+          <fieldset><legend>색</legend><div id="colors" class="colors" aria-label="캐릭터 색"></div></fieldset>
+          <div class="control-actions">
+            <button type="button" id="rig-preview" class="secondary">뼈대로 움직여 보기</button>
+            <button type="button" data-step="move" class="primary">동작 녹화로</button>
+          </div>
+        </section>
+
+        <section id="panel-move" class="panel" hidden>
+          <h2>내 특징이 드러나는 동작</h2>
+          <p>내가 잘하거나 자주 하는 일에서 동작 하나를 골라요. 카메라에서 팔과 몸이 보이게 서요.</p>
+          <div class="control-actions">
+            <button type="button" id="open-camera" class="secondary">앞 카메라 켜기</button>
+            <button type="button" id="record" class="primary" disabled>3초 녹화</button>
+            <button type="button" id="replay" class="secondary" disabled>다시 보기</button>
+            <button type="button" id="download" class="text-button" disabled>3D 작품 저장 (.glb)</button>
+          </div>
+          <p id="motion-status" class="status" aria-live="polite">동작을 정하면 앞 카메라를 켜요.</p>
+          <button type="button" data-step="place" class="primary bottom-action">정원에 놓기로</button>
+        </section>
+
+        <section id="panel-place" class="panel" hidden>
+          <h2>정원에서 살 자리</h2>
+          <p>정원에서 고른 자리를 비추고 화면을 터치해요. 캐릭터가 그 자리에서 저장한 동작을 반복해요.</p>
+          <label for="place-note">고른 자리와 그 이유</label>
+          <textarea id="place-note" rows="3" maxlength="180" placeholder="어떤 자리에서 어떤 모습으로 지낼까?"></textarea>
+          <p id="place-status" class="status" aria-live="polite"></p>
+          <button type="button" id="start-ar" class="primary bottom-action">뒤 카메라로 정원 비추기</button>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <footer><span>모카가든 워크숍 프로토타입</span><a href="./8TH-WALL-LICENSE.txt" target="_blank" rel="noreferrer">AR 엔진 · 8th Wall, Niantic Spatial</a></footer>
+
+  <section id="ar-overlay" class="ar-overlay" aria-label="정원에서 AR 배치" hidden>
+    <canvas id="ar-canvas" aria-label="정원의 바닥을 탭해 캐릭터를 배치"></canvas>
+    <div class="ar-top"><button type="button" id="close-ar">편집으로 돌아가기</button><p id="ar-status" aria-live="polite"></p></div>
+    <div class="ar-actions">
+      <button type="button" id="smaller" aria-label="캐릭터 작게">−</button>
+      <button type="button" id="larger" aria-label="캐릭터 크게">+</button>
+      <button type="button" id="rotate-ar">방향 돌리기</button>
+      <button type="button" id="reset-ar">다시 놓기</button>
+    </div>
+  </section>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
