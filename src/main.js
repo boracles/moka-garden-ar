@@ -22,8 +22,6 @@ let renderer;
 try {
   renderer=new THREE.WebGLRenderer({alpha:true,antialias:true});
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.7));
-  renderer.shadowMap.enabled=true;
-  renderer.shadowMap.type=THREE.PCFShadowMap;
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure=1.3;
   ui('viewport').append(renderer.domElement);
@@ -34,34 +32,17 @@ try {
 
 const key=new THREE.DirectionalLight(0xfff4d4,3.1);
 key.position.set(-3,6,4);
-key.castShadow=true;
-key.shadow.mapSize.set(1024,1024);
-key.shadow.camera.left=-2.7;
-key.shadow.camera.right=2.7;
-key.shadow.camera.top=3;
-key.shadow.camera.bottom=-3;
-key.shadow.bias=-.00025;
 const rim=new THREE.DirectionalLight(0xe1fff0,2.05);
 rim.position.set(3,4,-4);
 scene.add(key,rim,new THREE.HemisphereLight(0xfff7e5,0x829e8b,2.12));
-const plinth=new THREE.Mesh(new THREE.CylinderGeometry(1.03,1.06,.12,90),new THREE.MeshStandardMaterial({
-  color:'#859e88',roughness:.95,
-}));
-plinth.position.y=-.018;
-plinth.receiveShadow=true;
-scene.add(plinth);
-const ground=new THREE.Mesh(new THREE.PlaneGeometry(100,100),new THREE.ShadowMaterial({opacity:.21}));
-ground.rotation.x=-Math.PI/2;
-ground.position.y=-.08;
-ground.receiveShadow=true;
-scene.add(ground);
-
 const orbit=renderer ? new OrbitControls(camera,renderer.domElement) : null;
 if (orbit) {
   orbit.target.set(0,1.28,0);
   orbit.enableDamping=true;
   orbit.enablePan=false;
-  orbit.enableZoom=false;
+  orbit.enableZoom=true;
+  orbit.minZoom=.72;
+  orbit.maxZoom=3.5;
   orbit.minPolarAngle=.51;
   orbit.maxPolarAngle=1.68;
   orbit.enabled=false;
@@ -90,6 +71,9 @@ let mixer=null;
 let cameraRequest=0;
 let openingCamera=false;
 let brush=null;
+let transientOrbit=null;
+let example=null;
+let showingExample=false;
 const undoStack=[];
 const motion=new MotionCapture(ui('motion-video'),avatar,{
   status:message=>{ui('motion-status').textContent=message;},
@@ -146,8 +130,58 @@ function preview(clip) {
   action.play();
 }
 
+function frameModel(model) {
+  if (!orbit) return;
+  model.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(model);
+  if (bounds.isEmpty()) return;
+  const center=bounds.getCenter(new THREE.Vector3());
+  const size=bounds.getSize(new THREE.Vector3());
+  orbit.target.copy(center);
+  camera.position.copy(center).add(new THREE.Vector3(1.55,.62,6.8));
+  camera.zoom=Math.min(2.06,(camera.top-camera.bottom)/Math.max(size.y*1.28,1),
+    (camera.right-camera.left)/Math.max(size.x*1.36,1));
+  camera.updateProjectionMatrix();
+  orbit.update();
+}
+
+function refreshEditor() {
+  ui('undo').disabled=showingExample||!undoStack.length;
+  ui('rig-preview').disabled=!avatar.parts.size;
+  for (const button of document.querySelectorAll('[data-part]')) {
+    button.disabled=avatar.parts.has(button.dataset.part);
+  }
+  if (step==='make') ui('stage-label').textContent=showingExample?'완성 예시':avatar.parts.size?'작업 중':'점토 구';
+}
+
+function setExample(visible) {
+  if (showingExample===visible) return;
+  stopPreview();
+  showingExample=visible;
+  const toggle=ui('show-example');
+  toggle.setAttribute('aria-pressed',String(visible));
+  toggle.textContent=visible?'작업판으로 돌아가기':'예시 보기';
+  ui('sculpt-options').hidden=visible;
+  ui('example-info').hidden=!visible;
+  ui('brush-cursor').hidden=true;
+  for (const button of document.querySelectorAll('[data-tool]')) button.disabled=visible;
+  if (visible) {
+    example??=createAvatar({example:true});
+    scene.remove(avatar.model);
+    scene.add(example.model);
+  } else {
+    scene.remove(example.model);
+    scene.add(avatar.model);
+  }
+  if (orbit) orbit.enabled=visible||tool==='orbit';
+  ui('viewport').classList.toggle('orbit-mode',visible||tool==='orbit');
+  refreshEditor();
+  frameModel(visible?example.model:avatar.model);
+}
+
 function setStep(value) {
   if (!intro[value] || step===value) return;
+  if (showingExample) setExample(false);
   if (step==='move') closeCamera();
   stopPreview();
   step=value;
@@ -159,13 +193,20 @@ function setStep(value) {
   }
   ui('intro-copy').textContent=intro[value];
   ui('stage-label').textContent=labels[value];
+  ui('stage-hint').hidden=value!=='make';
+  ui('brush-rail').hidden=value!=='make';
+  ui('stage-toolbar').hidden=value!=='make';
+  ui('brush-cursor').hidden=true;
+  ui('workspace').classList.toggle('sculpt-mode',value==='make');
   if (orbit) orbit.enabled=step!=='make' || tool==='orbit';
+  ui('viewport').classList.toggle('orbit-mode',value!=='make'||tool==='orbit');
   if (step==='place') {
     ui('place-status').textContent=motionClip
       ? '정원에서 고른 자리를 태블릿으로 비춰요.'
       : '동작을 먼저 녹화하면 정원에 놓을 수 있어요.';
     if (motionClip && matchMedia('(pointer: coarse)').matches) warmUpAR().catch(()=>{});
   }
+  refreshEditor();
   updateMotionButtons();
 }
 
@@ -178,14 +219,32 @@ function selectTool(value) {
   stopPreview();
   if (orbit) orbit.enabled=tool==='orbit';
   ui('viewport').classList.toggle('orbit-mode',tool==='orbit');
+  ui('brush-cursor').hidden=true;
   for (const item of document.querySelectorAll('[data-tool]')) {
     item.setAttribute('aria-pressed',String(item.dataset.tool===tool));
   }
 }
 
+function rememberEdit(edit) {
+  undoStack.push(edit);
+  if (undoStack.length>25) undoStack.shift();
+  refreshEditor();
+}
+
 for (const button of document.querySelectorAll('[data-tool]')) {
   button.addEventListener('click',()=>selectTool(button.dataset.tool));
 }
+
+for (const button of document.querySelectorAll('[data-part]')) {
+  button.addEventListener('click',()=>{
+    stopPreview();
+    if (!avatar.addPart(button.dataset.part)) return;
+    rememberEdit({part:button.dataset.part});
+    frameModel(avatar.model);
+  });
+}
+
+ui('show-example').addEventListener('click',()=>setExample(!showingExample));
 
 for (const [name,color] of palette) {
   const button=document.createElement('button');
@@ -206,6 +265,8 @@ for (const [name,color] of palette) {
 if (renderer) {
   const canvas=renderer.domElement;
   const raycaster=new THREE.Raycaster();
+  const cursor=ui('brush-cursor');
+  const radius=()=>.065+Number(ui('brush-size').value)*.021;
   function intersect(event) {
     const bounds=canvas.getBoundingClientRect();
     const p=new THREE.Vector2((event.clientX-bounds.left)/bounds.width*2-1,1-(event.clientY-bounds.top)/bounds.height*2);
@@ -213,54 +274,79 @@ if (renderer) {
     return raycaster.intersectObjects(avatar.surfaces,false)[0];
   }
   function makeMark(hit,distance) {
-    const geometry=hit.object.geometry;
-    if (!brush.changes.has(geometry)) {
-      brush.changes.set(geometry,geometry.getAttribute(brush.attribute).array.slice());
+    const mesh=hit.object;
+    if (!brush.changes.has(mesh)) {
+      brush.changes.set(mesh,mesh.geometry.getAttribute(brush.attribute).array.slice());
     }
-    applyBrush(hit,brush.tool,brush.radius,distance,brush.color);
+    applyBrush(hit,brush.tool,brush.radius,distance,brush.color,brush.strength);
+  }
+  function positionCursor(event,hit) {
+    cursor.hidden=!hit;
+    if (!hit) return;
+    const rect=canvas.getBoundingClientRect();
+    const size=(brush?.radius??radius())*2*camera.zoom*rect.height/(camera.top-camera.bottom);
+    cursor.style.left=(event.clientX-rect.left)+'px';
+    cursor.style.top=(event.clientY-rect.top)+'px';
+    cursor.style.width=cursor.style.height=size+'px';
   }
   canvas.addEventListener('pointerdown',event=>{
-    if (step!=='make' || tool==='orbit' || brush || event.button>0) return;
+    if (step!=='make'||showingExample||tool==='orbit'||brush||transientOrbit!==null||event.button>0) return;
     stopPreview();
     const hit=intersect(event);
-    if (!hit) return;
+    if (!hit) {
+      transientOrbit=event.pointerId;
+      orbit.enabled=true;
+      cursor.hidden=true;
+      return;
+    }
     canvas.setPointerCapture(event.pointerId);
     brush={
       id:event.pointerId,x:event.clientX,y:event.clientY,changes:new Map(),tool,
       attribute:tool==='paint'?'color':'position',
-      radius:.065+Number(ui('brush-size').value)*.021,
+      radius:radius(),
       color:paintColor.clone(),
+      strength:.26+Number(ui('brush-strength').value)*.124,
     };
+    positionCursor(event,hit);
     if (tool==='paint') makeMark(hit,1);
-  });
+  },true);
   canvas.addEventListener('pointermove',event=>{
+    if (step!=='make'||showingExample||tool==='orbit'||transientOrbit!==null) return;
+    const hit=intersect(event);
+    positionCursor(event,hit);
     if (event.pointerId!==brush?.id) return;
     const distance=Math.hypot(event.clientX-brush.x,event.clientY-brush.y);
     if (distance<4) return;
     brush.x=event.clientX;
     brush.y=event.clientY;
-    const hit=intersect(event);
     if (!hit) return;
     makeMark(hit,distance);
   });
   function finishBrush(event) {
-    if (event.pointerId!==brush?.id) return;
-    if (brush.changes.size) {
-      undoStack.push({attribute:brush.attribute,changes:brush.changes});
-      if (undoStack.length>25) undoStack.shift();
-      ui('undo').disabled=false;
+    if (transientOrbit===event.pointerId) {
+      transientOrbit=null;
+      orbit.enabled=showingExample||step!=='make'||tool==='orbit';
     }
+    if (event.pointerId!==brush?.id) return;
+    if (brush.changes.size) rememberEdit({attribute:brush.attribute,changes:brush.changes});
     brush=null;
+    if (event.pointerType==='touch') cursor.hidden=true;
   }
   for (const name of ['pointerup','pointercancel','lostpointercapture']) canvas.addEventListener(name,finishBrush);
+  canvas.addEventListener('pointerleave',()=>{cursor.hidden=true;});
 }
 
 ui('undo').addEventListener('click',()=>{
   const last=undoStack.pop();
-  if (last) {
-    for (const [geometry,values] of last.changes) restoreBrushAttribute(geometry,last.attribute,values);
+  if (!last) return;
+  if (last.part) {
+    stopPreview();
+    avatar.removePart(last.part);
+    frameModel(avatar.model);
+  } else {
+    for (const [mesh,values] of last.changes) restoreBrushAttribute(mesh,last.attribute,values);
   }
-  ui('undo').disabled=!undoStack.length;
+  refreshEditor();
 });
 
 ui('rig-preview').addEventListener('click',()=>preview(rigPreview()));
@@ -369,5 +455,7 @@ function draw(now) {
   requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);
+frameModel(avatar.model);
+refreshEditor();
 updateMotionButtons();
 

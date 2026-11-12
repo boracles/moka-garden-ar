@@ -67,7 +67,12 @@ export class GardenAR {
     if (motionPermission!=='granted') throw new Error('정원에 놓으려면 기기 움직임 권한을 허용해 주세요.');
 
     this.xr=xr;
-    this.avatar=model;
+    model.updateMatrixWorld(true);
+    const base=new THREE.Box3().setFromObject(model).min.y;
+    model.position.y-=base;
+    this.avatar=new THREE.Group();
+    this.avatar.name='GardenCreaturePlacement';
+    this.avatar.add(model);
     this.avatar.visible=false;
     this.avatar.scale.setScalar(.37);
     this.avatar.rotation.y=0;
@@ -93,7 +98,7 @@ export class GardenAR {
         scene.add(new THREE.HemisphereLight(0xffffed,0x789a87,2.25));
         const light=new THREE.DirectionalLight(0xfff6df,2.4);
         light.position.set(-3,5,4);
-        scene.add(light,model);
+        scene.add(light,session.avatar);
         xr.XrController.updateCameraProjectionMatrix({origin:camera.position,facing:camera.quaternion});
         session.status('바닥을 천천히 비춰요. 위치를 찾으면 안내가 바뀌어요.');
       },
