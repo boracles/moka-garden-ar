@@ -21,7 +21,7 @@
 
 Cloudflare Workers에서 `wrangler.toml`의 Worker를 배포합니다. Worker의 `CLASS_SECRET` 비밀 값에는 32자 이상의 임의 문자열을 사용합니다. 같은 값을 로컬 환경 변수에 넣어 `node server/class-link.mjs YYYY-MM-DD`를 실행하면 수업 기기용 링크가 생성됩니다. 이 링크는 학생에게만 공유하고, 인쇄하는 QR에는 관람 링크를 그대로 사용합니다.
 
-Worker 주소를 프런트엔드 빌드 환경 변수 `VITE_MOKA_PUBLICATION_URL`에 설정하고 GitHub Pages에 배포합니다. 해당 수업 링크에서 처음 확정한 작품이 그 날짜와 번호에 저장되며, 같은 파일을 재전송할 수 있습니다. 프런트엔드는 서버 저장을 확인한 뒤 **완료**를 표시합니다.
+GitHub Pages 빌드는 `.env.production`의 `VITE_MOKA_PUBLICATION_URL`로 작품을 저장하고 불러옵니다. 해당 수업 링크에서 처음 확정한 작품이 그 날짜와 번호에 저장되며, 같은 파일을 재전송할 수 있습니다. 프런트엔드는 서버 저장을 확인한 뒤 **완료**를 표시합니다.
 
 ## 로컬 개발
 
