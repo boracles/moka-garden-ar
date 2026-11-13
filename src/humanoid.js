@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {snapshotModel} from './avatar.js';
+import {clayAttachments,snapshotModel} from './avatar.js';
 import {bindClayBody,clayBodyName} from './clay-body.js';
 
 const sides=['L','R'];
@@ -23,10 +23,9 @@ export function defaultMarkers(avatar) {
   markers.groin.y-=.06;
 
   for (const side of sides) {
-    const shoulder=joint('UpperArm'+side);
     const elbow=joint('Forearm'+side);
     markers['elbow'+side]=elbow;
-    markers['wrist'+side]=elbow.clone().lerp(shoulder,-.78);
+    markers['wrist'+side]=avatar.wrists[side].clone();
     markers['knee'+side]=joint('Shin'+side);
   }
   return markers;
@@ -105,9 +104,10 @@ export function buildHumanoid(avatar,markers) {
   const geometry=original.geometry.clone().applyMatrix4(original.matrixWorld);
   const body=bindClayBody(geometry,original.material,model,joints,segments);
 
-  for (const name of ['EarL','EarR','ExtensionPivot']) {
+  const attachments={...clayAttachments,ExtensionPivot:source.getObjectByName('ExtensionPivot').parent.name};
+  for (const [name,parent] of Object.entries(attachments)) {
     const part=source.getObjectByName(name);
-    joints[part.parent.name].attach(part);
+    joints[parent].attach(part);
   }
   const directions=Object.fromEntries(Object.entries(segments).map(([name,tip])=>[
     name,tip.clone().sub(points[name]).normalize(),
@@ -117,7 +117,9 @@ export function buildHumanoid(avatar,markers) {
     dispose() {
       geometry.dispose();
       body.skeleton.dispose();
-      model.getObjectByName('Moving clay')?.skeleton.dispose();
+      for (const name of ['Moving clay','NosePivot clay','TailPivot clay']) {
+        model.getObjectByName(name)?.skeleton.dispose();
+      }
     },
   };
 }

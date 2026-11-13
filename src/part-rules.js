@@ -1,11 +1,13 @@
 import * as THREE from 'three';
-import {partReaction} from './avatar.js';
+import {bendableParts,partReaction} from './avatar.js';
 
+const bendActions=[['bend','구부리기'],['sway','좌우로 흔들기'],['recorded','내가 녹화한 움직임']];
 export const partActions={
-  extension:[['bend','구부리기'],['sway','좌우로 흔들기'],['recorded','내가 녹화한 움직임']],
+  ...Object.fromEntries(bendableParts.map(part=>[part,bendActions])),
   ears:[['open','귀 펼치기'],['flap','귀 파닥이기']],
   head:[['tilt','고개 갸웃하기'],['nod','끄덕이기']],
   hands:[['wave','손 흔들기'],['lift','손목 들어 올리기']],
+  feet:[['lift','발끝 들어 올리기']],
 };
 
 export class PartRule {
@@ -22,7 +24,7 @@ export class PartRule {
       return;
     }
 
-    if (part==='extension' || part==='ears') {
+    if (bendableParts.includes(part) || part==='ears') {
       const move=partReaction(model,part);
       this.apply=move;
       this.restore=()=>move(0);
@@ -31,7 +33,7 @@ export class PartRule {
       return;
     }
 
-    const names=part==='head'?['Head']:['HandL','HandR'];
+    const names={head:['Head'],hands:['HandL','HandR'],feet:['FootL','FootR']}[part];
     const joints=names.map(name=>model.getObjectByName(name));
     const base=joints.map(()=>new THREE.Quaternion());
     const offset=new THREE.Quaternion();
@@ -39,7 +41,7 @@ export class PartRule {
     this.apply=amount=>{
       joints.forEach((joint,index)=>{
         base[index].copy(joint.quaternion);
-        const sign=index===1?-1:1;
+        const sign=index===1 && axis.z!==0?-1:1;
         joint.quaternion.multiply(offset.setFromAxisAngle(axis,amount*sign*.8));
       });
     };

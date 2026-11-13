@@ -9,6 +9,18 @@ export const palette = [
   ['붉은 흙', '#a34f3d'],
   ['먹색', '#282e31'],
   ['회청색', '#77929a'],
+  ['분홍', '#ee8b9e'],
+  ['빨강', '#da4c42'],
+  ['주황', '#ed8339'],
+  ['노랑', '#f3d54a'],
+  ['연두', '#99be52'],
+  ['초록', '#479355'],
+  ['민트', '#6ad0ba'],
+  ['하늘', '#62b8ed'],
+  ['파랑', '#456ac8'],
+  ['보라', '#9470be'],
+  ['갈색', '#805643'],
+  ['흰색', '#fff8ea'],
 ];
 
 const ceramic = new THREE.MeshStandardMaterial({vertexColors:true,roughness:.48});
@@ -21,6 +33,13 @@ const gold = '#bc873e';
 const earSpread=.68;
 const extensionJoints=['ClayBase','ClayMiddle','ClayTip'];
 const bendAngles=[.10,.66,.92];
+export const bendableParts=['nose','tail','extension'];
+export const clayPartLabels={ears:'귀',nose:'코',tail:'꼬리',hands:'손',feet:'발',extension:'자유 점토'};
+const bendJoints=part=>part==='extension'?extensionJoints:extensionJoints.map(name=>part+'_'+name);
+export const clayAttachments={
+  EarL:'Head',EarR:'Head',NosePivot:'Head',TailPivot:'Pelvis',
+  HandClayL:'HandL',HandClayR:'HandR',FootClayL:'FootL',FootClayR:'FootR',
+};
 
 function listeningEars(model) {
   const left=model.getObjectByName('EarL');
@@ -34,21 +53,21 @@ function listeningEars(model) {
 
 export function partReaction(model,part) {
   if (part==='ears') return listeningEars(model);
-  const bones=extensionJoints.map(name=>model.getObjectByName(name));
+  const bones=bendJoints(part).map(name=>model.getObjectByName(name));
   return amount=>{
-    bones.forEach((bone,index)=>{bone.rotation.z=bendAngles[index]*amount;});
+    bones.forEach((bone,index)=>{if (bone) bone.rotation.z=bendAngles[index]*amount;});
   };
 }
 
-export function extensionClip(samples) {
+export function extensionClip(samples,part='extension') {
   const times=samples.map(sample=>sample.time);
   const axis=new THREE.Vector3(0,0,1);
   const rotation=new THREE.Quaternion();
-  const tracks=extensionJoints.map((name,index)=>{
+  const tracks=bendJoints(part).map((name,index)=>{
     const values=samples.flatMap(({amount})=>rotation.setFromAxisAngle(axis,bendAngles[index]*amount).toArray());
     return new THREE.QuaternionKeyframeTrack(name+'.quaternion',times,values);
   });
-  return new THREE.AnimationClip('Moving clay',times.at(-1),tracks);
+  return new THREE.AnimationClip(part==='extension'?'Moving clay':clayPartLabels[part]+' 움직임',times.at(-1),tracks);
 }
 
 function tint(geometry,color) {
@@ -131,14 +150,26 @@ export function createAvatar({example=false}={}) {
     head.add(ear);
     return ear;
   });
-  const extension=new THREE.Group();
-  extension.name='ExtensionPivot';
-  const extensionBones=extensionJoints.map(name=>Object.assign(new THREE.Bone(),{name}));
-  extension.add(extensionBones[0]);
-  extensionBones[0].add(extensionBones[1]);
-  extensionBones[1].add(extensionBones[2]);
-  extensionBones[1].position.y=.18;
-  extensionBones[2].position.y=.21;
+  function bendable(part,name,parent,position,tilt,length=1) {
+    const pivot=new THREE.Group();
+    pivot.name=name;
+    pivot.position.set(...position);
+    pivot.rotation.x=tilt;
+    parent.add(pivot);
+    const bones=bendJoints(part).map(name=>Object.assign(new THREE.Bone(),{name}));
+    pivot.add(bones[0]);
+    bones[0].add(bones[1]);
+    bones[1].add(bones[2]);
+    bones[1].position.y=.18*length;
+    bones[2].position.y=.21*length;
+    return {pivot,bones,length};
+  }
+  const flex={
+    extension:bendable('extension','ExtensionPivot',spine,[0,0,0],0),
+    nose:bendable('nose','NosePivot',head,[0,.23,.16],1.53,.56),
+    tail:bendable('tail','TailPivot',pelvis,[0,.06,-.16],-1.04,.90),
+  };
+  const extension=flex.extension.pivot;
   let extensionPlace='top';
   function positionExtension(place=extensionPlace) {
     extensionPlace=place;
@@ -156,14 +187,27 @@ export function createAvatar({example=false}={}) {
   ears[0].position.set(.235,.26,.05);
   ears[1].position.set(-.235,.26,.05);
   const ankles={};
+  const wrists={};
+  const extremities={hands:[],feet:[]};
   for (const [side,sign] of [['L',1],['R',-1]]) {
     const arm=joint(spine,'UpperArm'+side,sign*.32,example ? .315 : .34,0);
     arm.rotation.z=sign*(example ? .26 : 1.78);
-    joint(arm,'Forearm'+side,0,example ? -.34 : -.33,0);
+    const forearm=joint(arm,'Forearm'+side,0,example ? -.34 : -.33,0);
     const leg=joint(pelvis,'Thigh'+side,sign*(example ? .173 : .22),example ? -.135 : -.08,0);
     leg.rotation.z=sign*(example ? .035 : .34);
-    joint(leg,'Shin'+side,0,example ? -.355 : -.32,0);
+    const shin=joint(leg,'Shin'+side,0,example ? -.355 : -.32,0);
     ankles[side]=leg.localToWorld(new THREE.Vector3(0,-.57,0));
+    wrists[side]=arm.localToWorld(new THREE.Vector3(0,-.5874,0));
+    for (const [kind,prefix,parent,position] of [
+      ['hands','HandClay',forearm,[0,-.40,0]],
+      ['feet','FootClay',shin,[0,-.305,.075]],
+    ]) {
+      const group=new THREE.Group();
+      group.name=prefix+side;
+      group.position.set(...position);
+      parent.add(group);
+      extremities[kind].push(group);
+    }
   }
   model.updateMatrixWorld(true);
 
@@ -187,21 +231,23 @@ export function createAvatar({example=false}={}) {
     return mesh;
   }
 
-  function movingClay() {
-    const geometry=volume(.127,.345,.119).translate(0,.27,0);
+  function movingClay(kind) {
+    const {pivot,bones,length}=flex[kind];
+    const width=kind==='nose'?.105:.127;
+    const geometry=volume(width,.345*length,width*.94).translate(0,.27*length,0);
     writeSkin(geometry,y=>{
-      const middle=THREE.MathUtils.smoothstep(y,.06,.29);
-      const tip=THREE.MathUtils.smoothstep(y,.27,.52);
+      const middle=THREE.MathUtils.smoothstep(y/length,.06,.29);
+      const tip=THREE.MathUtils.smoothstep(y/length,.27,.52);
       return [1-middle,middle*(1-tip),middle*tip];
     });
     tint(geometry,stone);
     const mesh=new THREE.SkinnedMesh(geometry,ceramic);
-    mesh.name='Moving clay';
+    mesh.name=kind==='extension'?'Moving clay':pivot.name+' clay';
     mesh.frustumCulled=false;
     mesh.castShadow=true;
-    extension.add(mesh);
+    pivot.add(mesh);
     model.updateMatrixWorld(true);
-    mesh.bind(new THREE.Skeleton(extensionBones));
+    mesh.bind(new THREE.Skeleton(bones));
     surfaces.push(mesh);
     return mesh;
   }
@@ -213,11 +259,16 @@ export function createAvatar({example=false}={}) {
       for (const ear of ears) {
         created.push(sculptable(ear,ear.name+' clay',volume(.115,.205,.073),[0,.135,0]));
       }
-    } else if (kind==='extension') {
-      created.push(movingClay());
+    } else if (bendableParts.includes(kind)) {
+      created.push(movingClay(kind));
+    } else if (kind==='hands' || kind==='feet') {
+      for (const group of extremities[kind]) {
+        const geometry=kind==='hands'?volume(.135,.17,.105):volume(.128,.13,.19);
+        created.push(sculptable(group,group.name+' clay',geometry,[0,0,0]));
+      }
     }
     if (!created.length) return false;
-    if (kind==='ears') {
+    if (created.length===2) {
       symmetryPairs.set(created[0],created[1]);
       symmetryPairs.set(created[1],created[0]);
     }
@@ -301,7 +352,7 @@ export function createAvatar({example=false}={}) {
     return symmetryPairs.get(mesh)??mesh;
   }
 
-  return {model,joints,rest,surfaces,bodyMesh,ankles,parts,addPart,removePart,positionExtension,mirrorSurface};
+  return {model,joints,rest,surfaces,bodyMesh,ankles,wrists,parts,addPart,removePart,positionExtension,mirrorSurface};
 }
 
 export function resetPose(avatar) {
@@ -455,7 +506,7 @@ export function snapshotModel(avatar) {
     model.getObjectByName(name).quaternion.copy(rotation);
   }
   partReaction(model,'ears')(0);
-  partReaction(model,'extension')(0);
+  for (const part of bendableParts) partReaction(model,part)(0);
   return model;
 }
 

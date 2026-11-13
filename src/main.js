@@ -2,7 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
-import {applyBrush,createAvatar,extensionClip,palette,partReaction,reflectedBrush,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
+import {applyBrush,bendableParts,clayPartLabels,createAvatar,extensionClip,palette,partReaction,reflectedBrush,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
 import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
 import {PartRule,partActions} from './part-rules.js';
@@ -90,10 +90,10 @@ let riggedAvatar=null;
 let rigMarkers=null;
 let selectedMarker='chin';
 const displayAvatar=()=>step==='make'?avatar:(riggedAvatar??avatar);
-let tool='pull';
+let tool='sculpt';
 const paintColor=new THREE.Color(palette[1][1]);
 let motionClip=null;
-let clayClip=null;
+const clayClips=new Map();
 let clayRecording=null;
 let mixer=null;
 let playingClay=false;
@@ -158,9 +158,9 @@ function stopPreview() {
   resetPose(displayAvatar());
 }
 
-function preview(clip,speed=1) {
+function preview(clip,speed=1,isClay=false) {
   stopPreview();
-  playingClay=clip===clayClip;
+  playingClay=isClay;
   mixer=new THREE.AnimationMixer(displayAvatar().model);
   const action=mixer.clipAction(clip);
   action.setLoop(THREE.LoopOnce,1);
@@ -169,7 +169,7 @@ function preview(clip,speed=1) {
   action.play();
 }
 
-function frameModel(model,front=false) {
+function frameModel(model,front=false,rear=false) {
   if (!orbit) return;
   model.updateMatrixWorld(true);
   const bounds=new THREE.Box3().setFromObject(model);
@@ -177,7 +177,7 @@ function frameModel(model,front=false) {
   const center=bounds.getCenter(new THREE.Vector3());
   const size=bounds.getSize(new THREE.Vector3());
   orbit.target.copy(center);
-  camera.position.copy(center).add(front?new THREE.Vector3(0,0,6.8):new THREE.Vector3(1.55,.62,6.8));
+  camera.position.copy(center).add(front?new THREE.Vector3(0,0,6.8):new THREE.Vector3(1.55,.62,rear?-6.8:6.8));
   camera.zoom=Math.min(2.06,(camera.top-camera.bottom)/Math.max(size.y*1.28,1),
     (camera.right-camera.left)/Math.max(size.x*1.36,1));
   camera.updateProjectionMatrix();
@@ -201,7 +201,7 @@ function addClayPart(part) {
   if (!avatar.addPart(part)) return;
   rememberEdit({part});
   if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
-  frameModel(displayAvatar().model);
+  frameModel(displayAvatar().model,false,part==='tail');
 }
 
 function displayRig() {
@@ -390,14 +390,14 @@ function selectedRule() {
     trigger,part,action,
     size:Number(ui('rule-size').value)/5,
     count:Number(ui('rule-count').value),
-    clip:action==='recorded'?clayClip:null,
+    clip:action==='recorded'?clayClips.get(part):null,
   };
 }
 
 function clearReactionPreview() {
   previewRule?.stop();
   previewRule=null;
-  partReaction(displayAvatar().model,'extension')(0);
+  for (const part of bendableParts) partReaction(displayAvatar().model,part)(0);
 }
 
 function setChoices(select,choices,placeholder) {
@@ -407,23 +407,23 @@ function setChoices(select,choices,placeholder) {
 }
 
 function updateRuleOptions() {
-  const parts=[
-    ['extension','코·꼬리',avatar.parts.has('extension')],
-    ['ears','귀',avatar.parts.has('ears')],
-    ['head','머리',Boolean(avatar.bodyMesh)],
-    ['hands','손',Boolean(riggedAvatar)],
-  ];
-  setChoices(ui('rule-part'),parts.filter(([, ,available])=>available),'고르기');
+  const parts=Object.entries(clayPartLabels).filter(([part])=>{
+    if (part==='hands') return Boolean(riggedAvatar);
+    if (part==='feet') return Boolean(riggedAvatar) && avatar.parts.has('feet');
+    return avatar.parts.has(part);
+  });
+  parts.push(['head','머리']);
+  setChoices(ui('rule-part'),parts,'고르기');
   const part=ui('rule-part').value;
+  const bendable=bendableParts.includes(part);
+  const clayClip=clayClips.get(part);
   const actions=(partActions[part]??[]).filter(([value])=>value!=='recorded'||clayClip);
   setChoices(ui('rule-action'),actions,'고르기');
   const isRecording=Boolean(clayRecording);
-  const hasParts=parts.some(([, ,available])=>available);
-  ui('rule-help').hidden=hasParts;
-  ui('rule-blocks').hidden=!hasParts;
   ui('rule-options').hidden=!selectedRule();
   ui('rule-size-options').hidden=ui('rule-action').value==='recorded';
-  ui('extension-settings').hidden=part!=='extension';
+  ui('extension-settings').hidden=!bendable;
+  if (bendable) ui('clay-recording-title').textContent=clayPartLabels[part]+' 움직임 직접 녹화하기';
   ui('rule-trigger').disabled=isRecording;
   ui('rule-part').disabled=isRecording;
   ui('rule-action').disabled=!part||isRecording;
@@ -506,8 +506,8 @@ function setExample(visible) {
     scene.remove(example.model);
     scene.add(avatar.model);
   }
-  if (orbit) orbit.enabled=visible||tool==='orbit';
-  ui('viewport').classList.toggle('orbit-mode',visible||tool==='orbit');
+  if (orbit) orbit.enabled=visible;
+  ui('viewport').classList.toggle('orbit-mode',visible);
   refreshEditor();
   frameModel(visible?example.model:avatar.model);
 }
@@ -546,8 +546,8 @@ function setStep(value) {
   ui('mirror-cursor').hidden=true;
   ui('workspace').classList.toggle('sculpt-mode',value==='make');
   ui('workspace').classList.toggle('ability-mode',value==='ability');
-  if (orbit) orbit.enabled=step!=='make' || tool==='orbit';
-  ui('viewport').classList.toggle('orbit-mode',value!=='make'||tool==='orbit');
+  if (orbit) orbit.enabled=step!=='make';
+  ui('viewport').classList.toggle('orbit-mode',value!=='make');
   if (step==='place') {
     updateMarkerNumber();
   }
@@ -565,8 +565,7 @@ for (const button of document.querySelectorAll('[data-step]')) {
 function selectTool(value) {
   tool=value;
   stopPreview();
-  if (orbit) orbit.enabled=tool==='orbit';
-  ui('viewport').classList.toggle('orbit-mode',tool==='orbit');
+  ui('brush-shape').hidden=tool!=='sculpt';
   ui('brush-cursor').hidden=true;
   ui('mirror-cursor').hidden=true;
   for (const item of document.querySelectorAll('[data-tool]')) {
@@ -590,6 +589,15 @@ for (const button of document.querySelectorAll('[data-part]')) {
 
 ui('show-example').addEventListener('click',()=>setExample(!showingExample));
 
+const customColor=ui('custom-color');
+customColor.value=palette[1][1];
+function choosePaint(color,button) {
+  paintColor.set(color);
+  selectTool('paint');
+  for (const item of ui('colors').children) item.setAttribute('aria-pressed',String(item===button));
+}
+customColor.addEventListener('input',()=>choosePaint(customColor.value));
+
 for (const [name,color] of palette) {
   const button=document.createElement('button');
   button.type='button';
@@ -599,9 +607,8 @@ for (const [name,color] of palette) {
   button.setAttribute('aria-label',name);
   button.setAttribute('aria-pressed',String(color===palette[1][1]));
   button.addEventListener('click',()=>{
-    paintColor.set(color);
-    selectTool('paint');
-    for (const item of ui('colors').children) item.setAttribute('aria-pressed',String(item===button));
+    customColor.value=color;
+    choosePaint(color,button);
   });
   ui('colors').append(button);
 }
@@ -647,7 +654,7 @@ if (renderer) {
   }
   symmetry.addEventListener('change',()=>positionCursors([]));
   canvas.addEventListener('pointerdown',event=>{
-    if (step!=='make'||showingExample||tool==='orbit'||brush||transientOrbit!==null||event.button>0) return;
+    if (step!=='make'||showingExample||brush||transientOrbit!==null||event.button>0) return;
     stopPreview();
     const hit=intersect(event);
     if (!hit) {
@@ -658,7 +665,8 @@ if (renderer) {
     }
     canvas.setPointerCapture(event.pointerId);
     brush={
-      id:event.pointerId,x:event.clientX,y:event.clientY,changes:new Map(),tool,
+      id:event.pointerId,x:event.clientX,y:event.clientY,changes:new Map(),
+      tool:tool==='sculpt'?ui('sculpt-direction-in').checked?'push':'pull':tool,
       attribute:tool==='paint'?'color':'position',
       symmetry:symmetry.checked,
       radius:radius(),
@@ -670,7 +678,7 @@ if (renderer) {
     if (tool==='paint') makeMark(hits,1);
   },true);
   canvas.addEventListener('pointermove',event=>{
-    if (step!=='make'||showingExample||tool==='orbit'||transientOrbit!==null) return;
+    if (step!=='make'||showingExample||transientOrbit!==null) return;
     const hits=brushHits(intersect(event));
     positionCursors(hits);
     if (event.pointerId!==brush?.id) return;
@@ -684,7 +692,7 @@ if (renderer) {
   function finishBrush(event) {
     if (transientOrbit===event.pointerId) {
       transientOrbit=null;
-      orbit.enabled=showingExample||step!=='make'||tool==='orbit';
+      orbit.enabled=showingExample||step!=='make';
     }
     if (event.pointerId!==brush?.id) return;
     if (brush.changes.size) {
@@ -705,11 +713,7 @@ ui('undo').addEventListener('click',()=>{
     stopPreview();
     avatar.removePart(last.part);
     if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
-    if (last.part==='extension') {
-      clayClip=null;
-      ui('clay-bend').value='0';
-      ui('clay-recording-status').textContent='녹화를 누르고 슬라이더를 움직여요.';
-    }
+    clayClips.delete(last.part);
     updateAbilities();
     frameModel(avatar.model);
   } else {
@@ -764,7 +768,7 @@ ui('replay').addEventListener('click',()=>{
 function gardenWork() {
   const model=snapshotModel(displayAvatar());
   const rule=selectedRule();
-  const animations=[motionClip,clayClip].filter(Boolean);
+  const animations=[motionClip,...clayClips.values()].filter(Boolean);
   const settings={
     motion:ui('use-movement').checked?motionClip?.name:null,
     speed:Number(ui('motion-speed').value),
@@ -780,9 +784,9 @@ function gardenWork() {
 }
 
 async function downloadWork(status,id,date) {
-  const {model,animations}=gardenWork();
-  if (!id && !riggedAvatar && !animations.length) return;
   try {
+    const {model,animations}=gardenWork();
+    if (!id && !riggedAvatar && !animations.length) return;
     if (id) {
       model.userData.gardenMarker=id;
       model.userData.gardenDate=date;
@@ -819,7 +823,8 @@ function sampleClay(now) {
   if (time-frames.at(-1).time>=1/30 || time===3) frames.push({time,amount:clayBend()});
   if (time<3) return;
   const moved=frames.some(frame=>Math.abs(frame.amount-frames[0].amount)>.02);
-  if (moved) clayClip=extensionClip(frames);
+  const {part}=clayRecording;
+  if (moved) clayClips.set(part,extensionClip(frames,part));
   clayRecording=null;
   ui('clay-recording-status').textContent=moved
     ? '구부리는 동작을 저장했어요.'
@@ -833,20 +838,28 @@ ui('clay-bend').addEventListener('input',()=>{
   clearReactionPreview();
 });
 ui('record-clay').addEventListener('click',()=>{
-  if (clayRecording || ui('rule-part').value!=='extension') return;
+  const part=ui('rule-part').value;
+  if (clayRecording || !bendableParts.includes(part)) return;
   stopPreview();
   clearReactionPreview();
-  clayRecording={start:performance.now(),frames:[{time:0,amount:clayBend()}]};
+  clayRecording={part,start:performance.now(),frames:[{time:0,amount:clayBend()}]};
   ui('clay-recording-status').textContent='녹화 중이에요. 슬라이더를 움직여요.';
   updateAbilities();
 });
 ui('replay-clay').addEventListener('click',()=>{
   clearReactionPreview();
-  if (clayClip) preview(clayClip);
+  const clayClip=clayClips.get(ui('rule-part').value);
+  if (clayClip) preview(clayClip,1,true);
 });
 
 for (const id of ['rule-trigger','rule-part','rule-action','rule-count']) {
   ui(id).addEventListener('change',()=>{
+    if (id==='rule-part') {
+      stopPreview();
+      ui('clay-bend').value='0';
+      ui('clay-recording-status').textContent=clayClips.has(ui(id).value)
+        ? '저장한 동작이 있어요.' : '녹화를 누르고 슬라이더를 움직여요.';
+    }
     clearReactionPreview();
     ui('ability-status').hidden=true;
     updateRuleOptions();
@@ -1056,8 +1069,9 @@ function draw(now) {
     else mixer?.update(elapsed);
     if (clayRecording) sampleClay(now);
     if (step==='ability') {
-      if (!previewRule?.active && !playingClay && ui('rule-part').value==='extension' && ui('extension-settings').open) {
-        partReaction(displayAvatar().model,'extension')(clayBend());
+      const part=ui('rule-part').value;
+      if (!previewRule?.active && !playingClay && bendableParts.includes(part) && ui('extension-settings').open) {
+        partReaction(displayAvatar().model,part)(clayBend());
       }
       previewRule?.update(elapsed);
     }
