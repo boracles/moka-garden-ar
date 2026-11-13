@@ -182,8 +182,8 @@
               </div>
             </fieldset>
             <fieldset class="ability-card">
-              <label class="ability-choice"><input id="use-movement" type="checkbox" aria-controls="movement-options" disabled> 녹화한 동작</label>
-              <p id="movement-help">동작을 녹화하면 붙일 수 있어요.</p>
+              <legend>녹화한 전신 동작</legend>
+              <p id="movement-help">동작 녹화에서 내 몸짓을 녹화해요.</p>
               <div id="movement-options" class="ability-options" hidden>
                 <div class="ability-setting"><label for="motion-speed">동작 속도</label><output id="motion-speed-value" for="motion-speed">1배</output></div>
                 <input id="motion-speed" type="range" min="0.5" max="1.5" step="0.25" value="1">
@@ -265,6 +265,10 @@
     <video id="ar-video" autoplay muted playsinline aria-label="가든 표식 카메라"></video>
     <canvas id="ar-canvas" aria-label="표식에 나타난 캐릭터"></canvas>
     <div class="ar-top"><button type="button" id="close-ar">편집으로 돌아가기</button><p id="ar-status" aria-live="polite"></p></div>
+    <ul id="ar-test-checks" class="ar-test-checks" aria-label="QR 테스트 진행 상황" aria-live="polite" hidden>
+      <li id="ar-test-motion"></li>
+      <li id="ar-test-rule"></li>
+    </ul>
     <button type="button" id="finish-ar-test" class="ar-test-done" hidden>테스트 완료 · 돌아가기</button>
     <div class="ar-abilities" id="ar-abilities" hidden>
       <button type="button" id="sound-ar">소리 내기</button>

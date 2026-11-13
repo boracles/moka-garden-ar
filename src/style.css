@@ -154,7 +154,8 @@ footer a{color:inherit;text-underline-offset:3px}
 .registered-marker a{display:inline-flex;align-items:center;color:var(--green)}
 #save-marker-work{margin-top:12px}
 .ar-test-done{position:absolute;z-index:3;bottom:max(16px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%)}
-.ar-overlay:has(.ar-test-done:not([hidden])) .ar-abilities{bottom:calc(max(16px,env(safe-area-inset-bottom)) + 56px)}
+.ar-test-checks{position:absolute;z-index:2;left:max(14px,env(safe-area-inset-left));bottom:calc(max(16px,env(safe-area-inset-bottom)) + 60px);display:grid;gap:4px;margin:0;padding:9px 12px;list-style:none;border-radius:10px;background:#102c22e8;color:white;font-size:13px;pointer-events:none}
+.ar-overlay:has(.ar-test-checks:not([hidden])) .ar-abilities{justify-content:flex-end}
 #marker-number{width:78px;min-height:44px;padding:6px;border:1px solid #aebeb4;border-radius:7px;color:var(--ink);font:inherit}
 #work-date,#view-date,#print-date{width:fit-content;min-height:44px;padding:6px;border:1px solid #aebeb4;border-radius:7px;color:var(--ink);background:#fff;font:inherit}
 #marker-print{width:min(calc(100% - 32px),650px);max-height:calc(100% - 32px);padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--cream);color:var(--ink)}

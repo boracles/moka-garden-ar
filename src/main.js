@@ -127,7 +127,6 @@ const motion=new MotionCapture(ui('motion-video'),avatar,{
   },
   complete:clip=>{
     invalidateRegistration();
-    if (!motionClip) ui('use-movement').checked=true;
     motionClip=clip;
     closeCamera();
     preview(clip);
@@ -406,7 +405,6 @@ ui('rig-edit').addEventListener('click',()=>{
   invalidateRegistration();
   closeCamera();
   motionClip=null;
-  ui('use-movement').checked=false;
   setRiggedAvatar(null);
   updateAbilities();
   startRigPlacement();
@@ -418,7 +416,6 @@ function invalidateBodyRig() {
   ui('rig-status').textContent='';
   if (!riggedAvatar && !motionClip) return;
   motionClip=null;
-  ui('use-movement').checked=false;
   setRiggedAvatar(null);
   updateAbilities();
 }
@@ -477,9 +474,8 @@ function updateRuleOptions() {
 
 function updateAbilities() {
   updateRuleOptions();
-  ui('use-movement').disabled=!motionClip;
   ui('movement-help').hidden=Boolean(motionClip);
-  ui('movement-options').hidden=!motionClip || !ui('use-movement').checked;
+  ui('movement-options').hidden=!motionClip;
   displayRig();
 }
 
@@ -852,7 +848,7 @@ function gardenWork() {
   const rule=selectedRule();
   const animations=[motionClip,...clayClips.values()].filter(Boolean);
   const settings={
-    motion:ui('use-movement').checked?motionClip?.name:null,
+    motion:motionClip?.name??null,
     speed:Number(ui('motion-speed').value),
     sound:ui('use-sound').checked?Number(ui('sound-pitch').value):null,
   };
@@ -953,7 +949,7 @@ ui('extension-place').addEventListener('change',event=>{
   updateClayFusion(avatar.model);
   frameModel(displayAvatar().model);
 });
-for (const id of ['use-sound','use-movement']) ui(id).addEventListener('change',updateAbilities);
+ui('use-sound').addEventListener('change',updateAbilities);
 for (const id of ['rule-size','sound-pitch','motion-speed']) {
   ui(id).addEventListener('input',event=>{
     const value=event.target.value;
@@ -993,7 +989,7 @@ function invalidateRegistration() {
 }
 
 for (const id of ['marker-number','work-date','place-note','rule-trigger','rule-part','rule-action',
-  'rule-count','rule-size','use-sound','sound-pitch','use-movement','motion-speed']) {
+  'rule-count','rule-size','use-sound','sound-pitch','motion-speed']) {
   ui(id).addEventListener('input',()=>{
     invalidateRegistration();
     if (id==='marker-number'||id==='work-date') updateMarkerNumber();
@@ -1064,6 +1060,12 @@ ui('save-marker-work').addEventListener('click',async()=>{
   if (!id || !date || registering || registration) return;
   const revision=workRevision;
   const status=ui('place-status');
+  if (!motionClip || !selectedRule()) {
+    status.textContent=!motionClip
+      ? '동작 녹화에서 전신 동작을 녹화한 뒤 등록해 주세요.'
+      : '기능 붙이기에서 언제, 어느 부위가, 어떻게 움직일지 고른 뒤 등록해 주세요.';
+    return;
+  }
   registering=true;
   updateMarkerNumber();
   status.textContent='작품을 등록하고 있어요.';
@@ -1093,7 +1095,7 @@ ui('save-marker-work').addEventListener('click',async()=>{
     download.download=date+'-'+id+'.glb';
     ui('registered-marker').hidden=false;
     ui('start-ar').textContent='QR 테스트하기';
-    status.textContent='작품을 등록했어요. QR을 테스트해 주세요.';
+    status.textContent='작품을 등록했어요. QR에서 전신 동작과 추가한 반응을 확인해 주세요.';
   } catch(error) {
     status.textContent='작품을 등록하지 못했어요. 다시 눌러 주세요.';
     console.error(error);
@@ -1105,17 +1107,18 @@ ui('save-marker-work').addEventListener('click',async()=>{
 });
 
 let arReturnFocus=null;
-async function openMarkerAR(work,id,date,{publicView=false,onTestRendered}={}) {
+async function openMarkerAR(work,id,date,{publicView=false,onTestProgress}={}) {
   arReturnFocus=document.activeElement;
   closeCamera();
   stopPreview();
   clearReactionPreview();
   ui('ar-overlay').hidden=false;
   ui('finish-ar-test').hidden=true;
+  ui('ar-test-checks').hidden=true;
   ui('ar-status').textContent='뒤 카메라를 준비하고 있어요.';
   ui('close-ar').focus();
   try {
-    await ar.open({work,id,date,publicView,onTestRendered});
+    await ar.open({work,id,date,publicView,onTestProgress});
   } catch(error) {
     if (!ui('ar-overlay').hidden) ui('ar-status').textContent=error.message;
     console.error(error);
@@ -1127,10 +1130,15 @@ ui('start-ar').addEventListener('click',()=>{
   if (!current || !renderer) return;
   const {id,date,work}=current;
   openMarkerAR({...work,model:snapshotModel({model:work.model,rest:{}})},id,date,{
-    onTestRendered:()=>{
-      if (current!==registration || !ui('finish-ar-test').hidden) return;
+    onTestProgress:({motion,rule})=>{
+      if (current!==registration) return;
+      ui('ar-test-checks').hidden=false;
+      ui('ar-test-motion').textContent=motion?'✓ 녹화한 전신 동작 확인':'녹화한 전신 동작 재생 대기';
+      ui('ar-test-rule').textContent=rule?'✓ 추가한 반응 확인'
+        :work.settings.rule?.trigger==='tap'?'캐릭터를 터치해 반응 확인':'표식에서 나타날 때 반응 확인';
+      if (!motion || !rule) return;
       ui('finish-ar-test').hidden=false;
-      ui('place-status').textContent='완료 · 등록한 QR에서 내 작품을 확인했어요.';
+      ui('place-status').textContent='완료 · 녹화한 전신 동작과 추가한 반응을 확인했어요.';
       ui('start-ar').textContent='QR 다시 테스트하기';
     },
   });

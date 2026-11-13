@@ -165,12 +165,12 @@ export class MarkerAR {
     this.report(message);
   }
 
-  async open({work,id,date,publicView=false,onTestRendered}) {
+  async open({work,id,date,publicView=false,onTestProgress}) {
     this.stop();
     this.date=date;
     this.publicView=publicView;
-    this.requireDatedMarker=publicView||Boolean(onTestRendered);
-    this.onTestRendered=onTestRendered;
+    this.requireDatedMarker=publicView||Boolean(onTestProgress);
+    this.test=onTestProgress?{motion:false,rule:false,notify:onTestProgress,reported:-1}:null;
     this.lockedId=id;
     this.id=id;
     const generation=this.generation;
@@ -209,7 +209,8 @@ export class MarkerAR {
       this.attemptedId=null;
       this.message=null;
       if (work) this.useWork(work);
-      this.status(onTestRendered?'등록한 QR의 네 모서리가 화면에 들어오도록 비춰요.'
+      this.reportTest();
+      this.status(this.test?'등록한 QR의 네 모서리가 화면에 들어오도록 비춰요.'
         : publicView?'같은 QR이 화면에 들어오도록 비춰요.':date+' 작품을 볼 거예요. 가든 QR 표식 전체를 비춰요.');
       this.raf=requestAnimationFrame(this.frame);
     } catch(error) {
@@ -224,8 +225,8 @@ export class MarkerAR {
   useWork({model,animations,settings}) {
     this.setVisible(false);
     this.anchor.clear();
-    this.body?.stopAllAction();
     this.rule?.stop();
+    this.body?.stopAllAction();
     model.updateMatrixWorld(true);
     const bounds=new THREE.Box3().setFromObject(model);
     const size=1.65/Math.max(bounds.max.y-bounds.min.y,.01);
@@ -236,9 +237,25 @@ export class MarkerAR {
     this.settings=settings;
     const movement=animations.find(clip=>clip.name===settings.motion);
     this.body=movement?new THREE.AnimationMixer(model):null;
-    this.bodyAction=movement?this.body.clipAction(movement).setEffectiveTimeScale(settings.speed??1):null;
+    this.bodyAction=movement?this.body.clipAction(movement)
+      .setLoop(THREE.LoopRepeat,Infinity).setEffectiveTimeScale(settings.speed??1):null;
+    this.body?.addEventListener('loop',()=>{
+      if (this.test) this.test.motion=true;
+    });
     const rule=settings.rule;
     this.rule=rule?new PartRule(model,{...rule,clip:animations.find(clip=>clip.name===rule.animation)}):null;
+    if (this.test && (!this.bodyAction || !this.rule)) {
+      throw new Error('저장한 작품에서 전신 동작 또는 추가한 반응을 찾지 못했어요. 다시 등록해 주세요.');
+    }
+  }
+
+  reportTest() {
+    if (!this.test) return;
+    const {motion,rule,notify,reported}=this.test;
+    const progress=Number(motion)+2*Number(rule);
+    if (progress===reported) return;
+    this.test.reported=progress;
+    notify({motion,rule});
   }
 
   async loadFile(file,remember=true,expectedId=this.detectedId) {
@@ -362,14 +379,12 @@ export class MarkerAR {
       this.rule?.clearPose();
       if (this.anchor.visible) {
         this.body?.update(elapsed);
+        const wasActive=this.rule?.active;
         this.rule?.update(elapsed);
+        if (this.test && wasActive && !this.rule.active) this.test.rule=true;
       }
       this.renderer.render(this.scene,this.camera);
-      if (this.onTestRendered && this.anchor.visible) {
-        const onTestRendered=this.onTestRendered;
-        this.onTestRendered=null;
-        onTestRendered();
-      }
+      if (this.anchor.visible) this.reportTest();
     }
     this.raf=requestAnimationFrame(this.frame);
   }
@@ -378,6 +393,7 @@ export class MarkerAR {
     if (!this.anchor?.visible || this.settings.rule?.trigger!=='tap') return;
     const rect=this.canvas.getBoundingClientRect();
     const point=new THREE.Vector2(2*(event.clientX-rect.left)/rect.width-1,1-2*(event.clientY-rect.top)/rect.height);
+    this.scene.updateMatrixWorld(true);
     const ray=new THREE.Raycaster();
     ray.setFromCamera(point,this.camera);
     if (ray.intersectObject(this.anchor,true).length) this.rule.trigger();
@@ -385,14 +401,15 @@ export class MarkerAR {
 
   stop() {
     this.generation++;
-    this.onTestRendered=null;
+    this.test=null;
     cancelAnimationFrame(this.raf);
     this.video.srcObject?.getTracks().forEach(track=>track.stop());
     this.video.srcObject=null;
-    this.body?.stopAllAction();
     this.rule?.stop();
+    this.body?.stopAllAction();
     this.anchor=null;
     this.body=null;
+    this.bodyAction=null;
     this.rule=null;
     this.scene=null;
     this.settings=null;
