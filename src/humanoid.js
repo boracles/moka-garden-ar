@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {snapshotModel} from './avatar.js';
+import {bindClayBody,clayBodyName} from './clay-body.js';
 
 const sides=['L','R'];
 const midpoint=(a,b)=>a.clone().lerp(b,.5);
@@ -15,22 +16,18 @@ export const markerGroups=[
 export function defaultMarkers(avatar) {
   avatar.model.updateMatrixWorld(true);
   const joint=name=>avatar.joints[name].getWorldPosition(new THREE.Vector3());
-  const head=new THREE.Box3().setFromObject(avatar.parts.get('head')[0]);
   const markers={
-    chin:head.getCenter(new THREE.Vector3()),
+    chin:joint('Head'),
     groin:midpoint(joint('ThighL'),joint('ThighR')),
   };
-  markers.chin.y=head.min.y+(head.max.y-head.min.y)*.13;
+  markers.groin.y-=.06;
 
   for (const side of sides) {
-    const arm=avatar.parts.get('arms').find(mesh=>mesh.name.endsWith(side));
-    arm.geometry.computeBoundingBox();
-    const bounds=arm.geometry.boundingBox;
-    const end=new THREE.Vector3(0,bounds.min.y+(bounds.max.y-bounds.min.y)*.16,0);
-    markers['wrist'+side]=arm.localToWorld(end);
-    markers['elbow'+side]=midpoint(joint('UpperArm'+side),markers['wrist'+side]);
-    const foot=avatar.parts.get('legs').find(mesh=>mesh.name==='Foot clay '+side);
-    markers['knee'+side]=midpoint(joint('Thigh'+side),foot.getWorldPosition(new THREE.Vector3()));
+    const shoulder=joint('UpperArm'+side);
+    const elbow=joint('Forearm'+side);
+    markers['elbow'+side]=elbow;
+    markers['wrist'+side]=elbow.clone().lerp(shoulder,-.78);
+    markers['knee'+side]=joint('Shin'+side);
   }
   return markers;
 }
@@ -43,7 +40,6 @@ export function buildHumanoid(avatar,markers) {
   const points={};
   const segments={};
   const rest={};
-  const geometries=[];
   const jointPoint=name=>source.getObjectByName(name).getWorldPosition(new THREE.Vector3());
 
   function bone(name,parent,point) {
@@ -69,8 +65,9 @@ export function buildHumanoid(avatar,markers) {
   bone('Neck','Chest',shoulder.clone().lerp(markers.chin,.66));
   bone('Head','Neck',markers.chin);
   const torso=['Pelvis','Spine','Chest','Neck','Head'];
-  const headMesh=avatar.parts.get('head')[0];
-  const headTop=new THREE.Box3().setFromObject(headMesh).max.y;
+  const original=source.getObjectByName(clayBodyName);
+  const {min,max}=new THREE.Box3().setFromObject(original);
+  const headTop=max.y;
   const tipOfHead=markers.chin.clone();
   tipOfHead.y=Math.max(headTop,tipOfHead.y+.1);
   for (let i=0;i<torso.length;i++) segments[torso[i]]=points[torso[i+1]]??tipOfHead;
@@ -81,8 +78,7 @@ export function buildHumanoid(avatar,markers) {
     const wrist=markers['wrist'+side];
     const hip=jointPoint('Thigh'+side).add(markers.groin.clone().sub(midpoint(jointPoint('ThighL'),jointPoint('ThighR'))));
     const knee=markers['knee'+side];
-    const foot=jointPoint('Foot clay '+side);
-    const ankle=foot.clone().add(new THREE.Vector3(0,.025,-.055));
+    const ankle=avatar.ankles[side];
     const sign=side==='L'?1:-1;
     if ((elbow.x-shoulder.x)*sign<.05 || (wrist.x-shoulder.x)*sign<.05 ||
         (knee.x-markers.groin.x)*sign<.025 || knee.y>=hip.y-.055 ||
@@ -101,58 +97,13 @@ export function buildHumanoid(avatar,markers) {
       ['Clavicle'+side]:upper,['UpperArm'+side]:elbow,['Forearm'+side]:wrist,
       ['Hand'+side]:wrist.clone().add(wrist.clone().sub(elbow).normalize().multiplyScalar(.14)),
       ['Thigh'+side]:knee,['Shin'+side]:ankle,
-      ['Foot'+side]:ankle.clone().add(new THREE.Vector3(0,-.025,.20)),
+      ['Foot'+side]:ankle.clone().add(new THREE.Vector3(sign*.035,-.12,.09)),
     });
   }
 
   model.name='GardenCreature';
-  model.updateMatrixWorld(true);
-  const skeleton=new THREE.Skeleton(Object.values(joints));
-  const jointIndex=Object.fromEntries(Object.keys(joints).map((name,index)=>[name,index]));
-
-  function skin(name,candidates) {
-    const original=source.getObjectByName(name);
-    const geometry=original.geometry.clone().applyMatrix4(original.matrixWorld);
-    geometries.push(geometry);
-    const positions=geometry.getAttribute('position');
-    const indices=new Uint16Array(positions.count*4);
-    const weights=new Float32Array(positions.count*4);
-    const vertex=new THREE.Vector3();
-    const closest=new THREE.Vector3();
-    const lines=candidates.map(name=>({
-      index:jointIndex[name],line:new THREE.Line3(points[name],segments[name]),
-    }));
-    for (let i=0;i<positions.count;i++) {
-      vertex.fromBufferAttribute(positions,i);
-      const influences=lines.map(({index,line})=>{
-        line.closestPointToPoint(vertex,true,closest);
-        const distance=vertex.distanceToSquared(closest);
-        return {index,weight:1/(.009+distance)**2.5};
-      }).sort((a,b)=>b.weight-a.weight).slice(0,4);
-      const total=influences.reduce((sum,item)=>sum+item.weight,0);
-      influences.forEach(({index,weight},offset)=>{
-        indices[i*4+offset]=index;
-        weights[i*4+offset]=weight/total;
-      });
-    }
-    geometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(indices,4));
-    geometry.setAttribute('skinWeight',new THREE.Float32BufferAttribute(weights,4));
-    const mesh=new THREE.SkinnedMesh(geometry,original.material);
-    mesh.name=name;
-    mesh.frustumCulled=false;
-    mesh.castShadow=true;
-    model.add(mesh);
-    mesh.bind(skeleton);
-  }
-
-  skin('Body clay',torso.slice(0,4));
-  skin('Head clay',['Neck','Head']);
-  for (const side of sides) {
-    skin('arms clay '+side,['Clavicle','UpperArm','Forearm','Hand'].map(name=>name+side));
-    const leg=['Thigh','Shin','Foot'].map(name=>name+side);
-    skin('legs clay '+side,leg);
-    skin('Foot clay '+side,[leg[2]]);
-  }
+  const geometry=original.geometry.clone().applyMatrix4(original.matrixWorld);
+  const body=bindClayBody(geometry,original.material,model,joints,segments);
 
   for (const name of ['EarL','EarR','ExtensionPivot']) {
     const part=source.getObjectByName(name);
@@ -162,10 +113,10 @@ export function buildHumanoid(avatar,markers) {
     name,tip.clone().sub(points[name]).normalize(),
   ]));
   const restHip=joints.Pelvis.position.clone();
-  return {model,joints,rest,directions,restHip,height:headTop-Math.min(points.FootL.y,points.FootR.y),
+  return {model,joints,rest,directions,restHip,height:headTop-min.y,
     dispose() {
-      geometries.forEach(geometry=>geometry.dispose());
-      skeleton.dispose();
+      geometry.dispose();
+      body.skeleton.dispose();
       model.getObjectByName('Moving clay')?.skeleton.dispose();
     },
   };

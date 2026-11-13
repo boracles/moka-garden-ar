@@ -188,7 +188,7 @@ function frameModel(model,front=false) {
 
 function refreshEditor() {
   ui('undo').disabled=showingExample||!undoStack.length;
-  ui('rig-preview').disabled=!avatar.parts.size;
+  ui('rig-preview').disabled=!avatar.bodyMesh;
   ui('extension-place-setting').hidden=!avatar.parts.has('extension');
   for (const button of document.querySelectorAll('[data-part]')) {
     button.disabled=avatar.parts.has(button.dataset.part);
@@ -200,14 +200,13 @@ function addClayPart(part) {
   stopPreview();
   if (!avatar.addPart(part)) return;
   rememberEdit({part});
-  if (['head','arms','legs'].includes(part)) invalidateBodyRig();
-  else if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+  if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
   frameModel(displayAvatar().model);
 }
 
 function displayRig() {
   const active=step==='move';
-  const ready=['head','arms','legs'].every(part=>avatar.parts.has(part));
+  const ready=Boolean(avatar.bodyMesh && renderer);
   const placing=active && ready && !riggedAvatar && Boolean(renderer);
   ui('body-rig').hidden=Boolean(riggedAvatar);
   ui('rig-motion').hidden=!riggedAvatar;
@@ -411,7 +410,7 @@ function updateRuleOptions() {
   const parts=[
     ['extension','코·꼬리',avatar.parts.has('extension')],
     ['ears','귀',avatar.parts.has('ears')],
-    ['head','머리',avatar.parts.has('head')],
+    ['head','머리',Boolean(avatar.bodyMesh)],
     ['hands','손',Boolean(riggedAvatar)],
   ];
   setChoices(ui('rule-part'),parts.filter(([, ,available])=>available),'고르기');
@@ -705,8 +704,7 @@ ui('undo').addEventListener('click',()=>{
   if (last.part) {
     stopPreview();
     avatar.removePart(last.part);
-    if (['head','arms','legs'].includes(last.part)) invalidateBodyRig();
-    else if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+    if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
     if (last.part==='extension') {
       clayClip=null;
       ui('clay-bend').value='0';

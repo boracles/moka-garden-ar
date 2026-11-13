@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {clone} from 'three/addons/utils/SkeletonUtils.js';
+import {bindClayBody,clayBodyGeometry} from './clay-body.js';
 
 export const palette = [
   ['도자기색', '#e6ddc9'],
@@ -17,7 +18,6 @@ const neighbors = new WeakMap();
 const stone = '#e4ded1';
 const slate = '#365052';
 const gold = '#bc873e';
-const starterArmAngle=.82;
 const earSpread=.68;
 const extensionJoints=['ClayBase','ClayMiddle','ClayTip'];
 const bendAngles=[.10,.66,.92];
@@ -142,31 +142,28 @@ export function createAvatar({example=false}={}) {
   let extensionPlace='top';
   function positionExtension(place=extensionPlace) {
     extensionPlace=place;
-    const hasHead=parts.has('head');
-    const onHead=hasHead && (place==='top' || place==='front');
+    const onHead=place==='top' || place==='front';
     (onHead?head:spine).add(extension);
     const positions={
-      top:[0,onHead?.42:.45,0],front:[0,onHead?.14:.03,onHead?.30:.45],
-      side:[.45,.035,0],back:[0,-.14,-.43],
+      top:[0,.48,0],front:[0,.20,.22],
+      side:[.33,-.08,0],back:[0,-.14,-.26],
     };
     extension.position.set(...positions[place]);
     const tilt={front:1.05,back:-1.15};
     extension.rotation.set(tilt[place]??0,0,place==='side'?-1.05:0);
   }
   positionExtension();
-  function positionEars() {
-    const hasHead=parts.has('head');
-    ears[0].position.set(hasHead?.255:.36,hasHead?.31:-.28,.05);
-    ears[1].position.set(-ears[0].position.x,ears[0].position.y,ears[0].position.z);
-  }
-  positionEars();
+  ears[0].position.set(.235,.26,.05);
+  ears[1].position.set(-.235,.26,.05);
+  const ankles={};
   for (const [side,sign] of [['L',1],['R',-1]]) {
-    const arm=joint(spine,'UpperArm'+side,sign*.32,.315,0);
-    arm.rotation.z=sign*(example ? .26 : starterArmAngle);
-    joint(arm,'Forearm'+side,0,-.34,0);
-    const leg=joint(pelvis,'Thigh'+side,sign*.173,-.135,0);
-    leg.rotation.z=sign*(example ? .035 : .18);
-    joint(leg,'Shin'+side,0,-.355,0);
+    const arm=joint(spine,'UpperArm'+side,sign*.32,example ? .315 : .34,0);
+    arm.rotation.z=sign*(example ? .26 : 1.78);
+    joint(arm,'Forearm'+side,0,example ? -.34 : -.33,0);
+    const leg=joint(pelvis,'Thigh'+side,sign*(example ? .173 : .22),example ? -.135 : -.08,0);
+    leg.rotation.z=sign*(example ? .035 : .34);
+    joint(leg,'Shin'+side,0,example ? -.355 : -.32,0);
+    ankles[side]=leg.localToWorld(new THREE.Vector3(0,-.57,0));
   }
   model.updateMatrixWorld(true);
 
@@ -212,35 +209,19 @@ export function createAvatar({example=false}={}) {
   function addPart(kind) {
     if (example || parts.has(kind)) return false;
     const created=[];
-    if (kind==='head') {
-      created.push(sculptable(head,'Head clay',volume(.28,.32,.255),[0,.105,0]));
-    } else if (kind==='ears') {
+    if (kind==='ears') {
       for (const ear of ears) {
         created.push(sculptable(ear,ear.name+' clay',volume(.115,.205,.073),[0,.135,0]));
       }
     } else if (kind==='extension') {
       created.push(movingClay());
-    } else if (kind==='arms' || kind==='legs') {
-      const isLeg=kind==='legs';
-      for (const side of ['L','R']) {
-        const [upper,lower]=isLeg?[joints['Thigh'+side],joints['Shin'+side]]:[joints['UpperArm'+side],joints['Forearm'+side]];
-        created.push(limb(kind+' clay '+side,upper,lower,isLeg));
-        if (isLeg) created.push(sculptable(lower,'Foot clay '+side,volume(.139,.086,.189),[0,-.30,.051]));
-      }
     }
     if (!created.length) return false;
-    if (kind==='ears' || kind==='arms' || kind==='legs') {
-      const half=created.length/2;
-      for (let i=0;i<half;i++) {
-        symmetryPairs.set(created[i],created[i+half]);
-        symmetryPairs.set(created[i+half],created[i]);
-      }
+    if (kind==='ears') {
+      symmetryPairs.set(created[0],created[1]);
+      symmetryPairs.set(created[1],created[0]);
     }
     parts.set(kind,created);
-    if (kind==='head') {
-      positionEars();
-      positionExtension();
-    }
     return true;
   }
 
@@ -256,15 +237,22 @@ export function createAvatar({example=false}={}) {
       if (index!==-1) surfaces.splice(index,1);
     }
     parts.delete(kind);
-    if (kind==='head') {
-      positionEars();
-      positionExtension();
-    }
   }
 
+  let bodyMesh;
   if (!example) {
-    sculptable(spine,'Body clay',volume(.39,.54,.25),[0,-.045,0]);
-    for (const part of ['head','arms','legs']) addPart(part);
+    const geometry=clayBodyGeometry();
+    tint(geometry,stone);
+    const end=name=>joints[name].getWorldPosition(new THREE.Vector3());
+    const segments={Pelvis:end('Spine'),Spine:end('Head'),Head:new THREE.Vector3(0,2.16,0)};
+    for (const [side,sign] of [['L',1],['R',-1]]) {
+      segments['UpperArm'+side]=end('Forearm'+side);
+      segments['Forearm'+side]=new THREE.Vector3(sign*1.03,1.55,0);
+      segments['Thigh'+side]=end('Shin'+side);
+      segments['Shin'+side]=ankles[side];
+    }
+    bodyMesh=bindClayBody(geometry,ceramic,model,joints,segments);
+    surfaces.push(bodyMesh);
   } else {
     const body=volume(.385,.615,.302);
     const v=body.getAttribute('position');
@@ -313,7 +301,7 @@ export function createAvatar({example=false}={}) {
     return symmetryPairs.get(mesh)??mesh;
   }
 
-  return {model,joints,rest,surfaces,parts,addPart,removePart,positionExtension,mirrorSurface};
+  return {model,joints,rest,surfaces,bodyMesh,ankles,parts,addPart,removePart,positionExtension,mirrorSurface};
 }
 
 export function resetPose(avatar) {
