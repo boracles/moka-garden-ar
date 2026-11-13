@@ -169,6 +169,7 @@ export class MarkerAR {
     this.stop();
     this.date=date;
     this.publicView=publicView;
+    this.requireDatedMarker=publicView||Boolean(onTestRendered);
     this.onTestRendered=onTestRendered;
     this.lockedId=id;
     this.id=id;
@@ -292,7 +293,7 @@ export class MarkerAR {
     const marker=code && readMarker(code.data);
     if (!marker) return;
     const {id,date}=marker;
-    if ((this.publicView || this.onTestRendered || date) && date!==this.date) {
+    if ((this.requireDatedMarker || date) && date!==this.date) {
       this.setVisible(false);
       this.status(this.publicView?'웹앱을 열 때 찍었던 QR을 다시 비춰 주세요.':'선택한 수업 날짜의 QR을 비춰 주세요.');
       return;
