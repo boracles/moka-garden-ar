@@ -6,9 +6,15 @@ import {applyBrush,createAvatar,extensionClip,palette,partReaction,resetPose,res
 import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
 import {PartRule,partActions} from './part-rules.js';
-import {MarkerAR,markerId,saveMarkerWork,showMarker} from './marker-ar.js';
+import {MarkerAR,classDate,exhibitionWork,markerCount,markerId,saveMarkerWork,showMarker,workLabel} from './marker-ar.js';
 
 const ui=id=>document.getElementById(id);
+const params=new URLSearchParams(location.search);
+const publicMode=params.has('view');
+if (publicMode) document.body.classList.add('public-mode');
+const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date());
+const initialDate=classDate(params.get('date'))??today;
+for (const id of ['work-date','view-date','print-date']) ui(id).value=initialDate;
 const intro = {
   make:'실험실을 탈출한 생명체들이 모카가든에 자리 잡았어요. 그중 하나에 내 특징을 담아 봐요.',
   move:'내 특징이 잘 드러나는 동작을 골라 내가 만든 생명체에 입혀요.',
@@ -32,15 +38,17 @@ const rigMarkerButtons=new Map();
 const camera=new THREE.OrthographicCamera(-2,2,1.75,-1.75,.1,25);
 camera.position.set(2.15,1.86,6.7);
 let renderer;
-try {
-  renderer=new THREE.WebGLRenderer({alpha:true,antialias:true});
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.7));
-  renderer.toneMapping=THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure=1.3;
-  ui('viewport').append(renderer.domElement);
-} catch(error) {
-  ui('graphics-error').hidden=false;
-  console.error(error);
+if (!publicMode) {
+  try {
+    renderer=new THREE.WebGLRenderer({alpha:true,antialias:true});
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.7));
+    renderer.toneMapping=THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure=1.3;
+    ui('viewport').append(renderer.domElement);
+  } catch(error) {
+    ui('graphics-error').hidden=false;
+    console.error(error);
+  }
 }
 
 const key=new THREE.DirectionalLight(0xfff4d4,3.1);
@@ -139,7 +147,7 @@ function updateMotionButtons() {
   ui('replay').disabled=!motionClip || openingCamera || Boolean(motion.recording);
   ui('download').disabled=!riggedAvatar || openingCamera || motion.active;
   ui('rig-edit').disabled=openingCamera || Boolean(motion.recording);
-  ui('start-ar').disabled=!renderer||!markerId(ui('marker-number').value);
+  ui('start-ar').disabled=!renderer||!markerId(ui('marker-number').value)||!classDate(ui('work-date').value);
   ui('view-garden').disabled=!renderer;
 }
 
@@ -540,8 +548,7 @@ function setStep(value) {
   if (orbit) orbit.enabled=step!=='make' || tool==='orbit';
   ui('viewport').classList.toggle('orbit-mode',value!=='make'||tool==='orbit');
   if (step==='place') {
-    ui('place-status').textContent='QR 표식을 평평한 곳에 놓아 주세요.';
-    updateMarkerPreview();
+    updateMarkerNumber();
   }
   if (step==='move') startRigPlacement();
   ui('ability-status').hidden=true;
@@ -756,22 +763,25 @@ function gardenWork() {
   return {model,animations,settings};
 }
 
-async function downloadWork(status,id) {
+async function downloadWork(status,id,date) {
   const {model,animations}=gardenWork();
   if (!id && !riggedAvatar && !animations.length) return;
   try {
-    if (id) model.userData.gardenMarker=id;
+    if (id) {
+      model.userData.gardenMarker=id;
+      model.userData.gardenDate=date;
+    }
     const glb=await new GLTFExporter().parseAsync(model,{binary:true,animations});
     const file=new Blob([glb],{type:'model/gltf-binary'});
-    if (id) await saveMarkerWork(id,file).catch(()=>{});
+    if (id) await saveMarkerWork(date,id,file).catch(()=>{});
     const url=URL.createObjectURL(file);
     const link=document.createElement('a');
     link.href=url;
-    link.download=id?id+'.glb':'moka-garden-creature.glb';
+    link.download=id?date+'-'+id+'.glb':'moka-garden-creature.glb';
     link.click();
     setTimeout(()=>URL.revokeObjectURL(url),1500);
     if (id) {
-      status.textContent='작품을 저장했어요. 다른 태블릿에서도 보려면 이 파일을 해당 태블릿에 전달해 주세요.';
+      status.textContent=workLabel(date,id)+' 작품을 저장했어요.';
       return;
     }
     status.textContent=animations.length?'동작이 담긴 3D 작품 파일을 저장했어요.':'뼈대가 담긴 3D 작품 파일을 저장했어요.';
@@ -849,31 +859,90 @@ ui('movement-preview').addEventListener('click',()=>{
   if (motionClip) preview(motionClip,Number(ui('motion-speed').value));
 });
 
-async function updateMarkerPreview() {
-  const id=markerId(ui('marker-number').value);
-  ui('save-marker-work').disabled=!id;
-  ui('print-marker').disabled=!id;
-  ui('start-ar').disabled=!renderer||!id;
-  ui('marker-sheet').hidden=!id;
-  if (!id) return;
-  ui('marker-label').textContent='모카가든 '+id.slice(-2);
+function updateMarkerNumber() {
+  const input=ui('marker-number');
+  const id=markerId(input.value);
+  const date=classDate(ui('work-date').value);
+  ui('save-marker-work').disabled=!id||!date;
+  ui('start-ar').disabled=!renderer||!id||!date;
+  input.setAttribute('aria-invalid',String(Boolean(input.value && !id)));
+  ui('marker-number-help').textContent=id&&date
+    ? workLabel(date,id)+' QR에 연결해요.'
+    : '01번부터 10번까지 입력할 수 있어요.';
+  return id;
+}
+
+for (const id of ['marker-number','work-date']) ui(id).addEventListener('input',()=>{
+  updateMarkerNumber();
+  ui('place-status').textContent='';
+});
+ui('marker-number').addEventListener('blur',event=>{
+  const id=markerId(event.currentTarget.value);
+  if (id) event.currentTarget.value=id.slice(-2);
+});
+
+const printDialog=ui('marker-print');
+let printRequest=0;
+async function renderPrintMarkers() {
+  const request=++printRequest;
+  const date=classDate(ui('print-date').value);
+  const grid=ui('marker-print-grid');
+  grid.replaceChildren();
+  ui('print-markers').disabled=true;
+  ui('marker-print-date').textContent=date??'';
+  const status=ui('marker-print-status');
+  status.hidden=false;
+  if (!date) {
+    status.textContent='수업 날짜를 선택해 주세요.';
+    return;
+  }
+  const cards=Array.from({length:markerCount},(_,index)=>{
+    const id=markerId(index+1);
+    const number=id.slice(-2);
+    const card=document.createElement('div');
+    card.className='marker-print-card';
+    const canvas=document.createElement('canvas');
+    canvas.setAttribute('aria-label',number+'번 QR');
+    const label=document.createElement('strong');
+    label.textContent=number;
+    card.append(canvas,label);
+    return {id,card,canvas};
+  });
+  status.textContent='인쇄용 QR을 준비하고 있어요.';
   try {
-    await showMarker(ui('marker-qr'),id);
+    await Promise.all(cards.map(({id,canvas})=>showMarker(canvas,date,id)));
+    if (request!==printRequest) return;
+    grid.replaceChildren(...cards.map(({card})=>card));
+    status.hidden=true;
+    ui('print-markers').disabled=false;
   } catch {
-    ui('print-marker').disabled=true;
-    ui('place-status').textContent='QR을 그리지 못했어요. 페이지를 새로고침해 주세요.';
+    if (request!==printRequest) return;
+    status.textContent='QR을 그리지 못했어요. 닫고 다시 열어 주세요.';
   }
 }
 
-ui('marker-number').addEventListener('input',updateMarkerPreview);
-ui('print-marker').addEventListener('click',()=>window.print());
+function openMarkerPrint() {
+  printDialog.showModal();
+  renderPrintMarkers();
+}
+
+ui('open-marker-print').addEventListener('click',event=>{
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  openMarkerPrint();
+});
+ui('print-markers').addEventListener('click',()=>window.print());
+ui('close-marker-print').addEventListener('click',()=>printDialog.close());
+ui('print-date').addEventListener('input',renderPrintMarkers);
+
 ui('save-marker-work').addEventListener('click',()=>{
   const id=markerId(ui('marker-number').value);
-  if (id) downloadWork(ui('place-status'),id);
+  const date=classDate(ui('work-date').value);
+  if (id && date) downloadWork(ui('place-status'),id,date);
 });
 
 let arReturnFocus=null;
-async function openMarkerAR(work,id) {
+async function openMarkerAR(work,id,date,publicView=false) {
   arReturnFocus=document.activeElement;
   closeCamera();
   stopPreview();
@@ -882,7 +951,7 @@ async function openMarkerAR(work,id) {
   ui('ar-status').textContent='뒤 카메라를 준비하고 있어요.';
   ui('close-ar').focus();
   try {
-    await ar.open({work,id});
+    await ar.open({work,id,date,publicView});
   } catch(error) {
     if (!ui('ar-overlay').hidden) ui('ar-status').textContent=error.message;
     console.error(error);
@@ -891,12 +960,46 @@ async function openMarkerAR(work,id) {
 
 ui('start-ar').addEventListener('click',()=>{
   const id=markerId(ui('marker-number').value);
-  if (!id || !renderer) return;
-  openMarkerAR(gardenWork(),id);
+  const date=classDate(ui('work-date').value);
+  if (!id || !date || !renderer) return;
+  openMarkerAR(gardenWork(),id,date);
 });
 ui('view-garden').addEventListener('click',()=>{
-  if (renderer) openMarkerAR(null,null);
+  if (renderer) ui('garden-date').showModal();
 });
+ui('close-garden-date').addEventListener('click',()=>ui('garden-date').close());
+ui('garden-date-form').addEventListener('submit',event=>{
+  event.preventDefault();
+  const date=classDate(ui('view-date').value);
+  if (!date) return;
+  ui('garden-date').close();
+  openMarkerAR(null,null,date);
+});
+
+async function openPublicViewer() {
+  ui('public-viewer').hidden=false;
+  ui('close-ar').textContent='카메라 닫기';
+  const status=ui('public-viewer-status');
+  const id=markerId(params.get('view'));
+  const date=classDate(params.get('date'));
+  if (!id || !date) {
+    status.textContent='가든의 QR을 다시 찍어 주세요.';
+    return;
+  }
+  status.textContent='작품을 찾고 있어요.';
+  const work=await exhibitionWork(date,id).catch(()=>null);
+  if (!work) {
+    status.textContent='아직 이 QR에 공개된 작품이 없어요.';
+    return;
+  }
+  if (work.model.userData.gardenDemo) ui('public-viewer-title').textContent='가든 테스트 작품';
+  status.textContent='카메라를 켜고 같은 QR을 다시 비춰 주세요.';
+  const button=ui('public-start');
+  button.hidden=false;
+  button.addEventListener('click',()=>openMarkerAR({
+    ...work,model:snapshotModel({model:work.model,rest:{}}),
+  },id,date,true));
+}
 ui('ar-work-file').addEventListener('change',async event=>{
   const file=event.target.files[0];
   event.target.value='';
@@ -956,4 +1059,6 @@ frameModel(avatar.model);
 refreshEditor();
 updateMotionButtons();
 updateAbilities();
+if (publicMode) openPublicViewer();
+else if (params.get('qr')==='1') openMarkerPrint();
 

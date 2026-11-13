@@ -8,19 +8,48 @@ const scannedCorners=['topLeftCorner','topRightCorner','bottomRightCorner','bott
 const square=[[-.5,.5],[.5,.5],[.5,-.5],[-.5,-.5]];
 const verticalFov=54;
 const storageName='moka-garden-works';
+const publicSite=new URL('https://boracles.github.io/moka-garden-ar/');
+export const markerCount=10;
 
 export function markerId(value) {
+  if (!/^\d{1,2}$/.test(String(value).trim())) return null;
   const n=Number(value);
-  return Number.isInteger(n) && n>=1 && n<=99 ? 'moka-garden-'+String(n).padStart(2,'0') : null;
+  return n>=1 && n<=markerCount ? 'moka-garden-'+String(n).padStart(2,'0') : null;
 }
 
-export async function showMarker(canvas,id) {
+export function classDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const date=new Date(value+'T00:00:00Z');
+  return Number.isNaN(date.valueOf()) || date.toISOString().slice(0,10)!==value ? null : value;
+}
+
+export function workLabel(date,id) {
+  return date+' · '+id.slice(-2)+'번';
+}
+
+export async function showMarker(canvas,date,id) {
   const {default:qr}=await import('qrcode');
-  await qr.toCanvas(canvas,id,{width:420,margin:4,errorCorrectionLevel:'M'});
+  const url=new URL(publicSite);
+  url.searchParams.set('date',date);
+  url.searchParams.set('view',id.slice(-2));
+  await qr.toCanvas(canvas,url.href,{width:420,margin:4,errorCorrectionLevel:'M'});
 }
 
-function readSavedWork(id) {
-  return withWorks('readonly',store=>store.get(id));
+function readMarker(text) {
+  if (markerPattern.test(text)) return {id:text,date:null};
+  try {
+    const url=new URL(text);
+    const id=markerId(url.searchParams.get('view'));
+    const date=classDate(url.searchParams.get('date'));
+    if (id && date && url.origin===publicSite.origin && url.pathname===publicSite.pathname) return {id,date};
+  } catch {
+    // Other QR codes do not identify garden works.
+  }
+  return null;
+}
+
+function readSavedWork(date,id) {
+  return withWorks('readonly',store=>store.get(date+'/'+id));
 }
 
 function withWorks(mode,request) {
@@ -38,8 +67,25 @@ function withWorks(mode,request) {
   });
 }
 
-export function saveMarkerWork(id,file) {
-  return withWorks('readwrite',store=>store.put(file,id));
+export function saveMarkerWork(date,id,file) {
+  return withWorks('readwrite',store=>store.put(file,date+'/'+id));
+}
+
+async function fetchWork(date,id) {
+  const response=await fetch(new URL('works/'+date+'/'+id+'.glb',document.baseURI),{cache:'no-cache'});
+  return response.ok ? response.blob() : null;
+}
+
+export async function exhibitionWork(date,id) {
+  const read=async file=>{
+    if (!file) return null;
+    const work=await loadWork(await file.arrayBuffer()).catch(()=>null);
+    return work?.date===date && work.id===id ? work : null;
+  };
+  const published=await read(await fetchWork(date,id).catch(()=>null));
+  if (published && !published.model.userData.gardenDemo) return published;
+  const saved=await read(await readSavedWork(date,id).catch(()=>null));
+  return saved??published;
 }
 
 export function markerPose(location,width,height) {
@@ -90,7 +136,7 @@ function loadWork(buffer) {
     const allowed=rule && partActions[rule.part]?.some(([action])=>action===rule.action);
     if (!allowed || !['tap','place'].includes(rule.trigger) ||
       (rule.action==='recorded' && !gltf.animations.some(clip=>clip.name===rule.animation))) delete settings.rule;
-    return {id:model.userData.gardenMarker,model,animations:gltf.animations,settings};
+    return {id:model.userData.gardenMarker,date:classDate(model.userData.gardenDate),model,animations:gltf.animations,settings};
   });
 }
 
@@ -111,8 +157,10 @@ export class MarkerAR {
     this.report(message);
   }
 
-  async open({work,id}) {
+  async open({work,id,date,publicView=false}) {
     this.stop();
+    this.date=date;
+    this.publicView=publicView;
     this.lockedId=id;
     this.id=id;
     const generation=this.generation;
@@ -151,7 +199,7 @@ export class MarkerAR {
       this.attemptedId=null;
       this.message=null;
       if (work) this.useWork(work);
-      this.status('가든 QR 표식 전체가 화면에 들어오도록 비춰요.');
+      this.status(publicView?'같은 QR이 화면에 들어오도록 비춰요.':date+' 작품을 볼 거예요. 가든 QR 표식 전체를 비춰요.');
       this.raf=requestAnimationFrame(this.frame);
     } catch(error) {
       if (generation!==this.generation) return;
@@ -182,18 +230,21 @@ export class MarkerAR {
     this.rule=rule?new PartRule(model,{...rule,clip:animations.find(clip=>clip.name===rule.animation)}):null;
   }
 
-  async loadFile(file,remember=true) {
+  async loadFile(file,remember=true,expectedId=this.detectedId) {
     const generation=this.generation;
     const work=await loadWork(await file.arrayBuffer());
-    if (generation!==this.generation || !this.anchor) return;
+    if (generation!==this.generation || !this.anchor || expectedId!==this.detectedId) return;
     if (this.detectedId && work.id!==this.detectedId) {
       throw new Error('이 작품은 '+work.id.slice(-2)+'번 표식에 연결돼 있어요.');
+    }
+    if (work.date && work.date!==this.date) {
+      throw new Error('이 작품은 '+workLabel(work.date,work.id)+' 작품이에요. 관람 날짜를 바꿔 주세요.');
     }
     this.id=work.id;
     this.useWork(work);
     this.onFileNeeded?.(null);
-    this.status('작품을 열었어요. '+work.id.slice(-2)+'번 표식을 비춰요.');
-    if (remember) await saveMarkerWork(work.id,file).catch(()=>{});
+    this.status(workLabel(this.date,work.id)+' 작품을 열었어요.');
+    if (remember) await saveMarkerWork(this.date,work.id,file).catch(()=>{});
   }
 
   setVisible(visible) {
@@ -210,13 +261,9 @@ export class MarkerAR {
 
   async findWork(id,generation) {
     try {
-      let file=await readSavedWork(id).catch(()=>null);
-      if (!file) {
-        const url=new URL('works/'+id+'.glb',document.baseURI);
-        const response=await fetch(url);
-        if (response.ok) file=await response.blob();
-      }
-      if (file && generation===this.generation && !this.id && this.detectedId===id) await this.loadFile(file,false);
+      let file=await readSavedWork(this.date,id).catch(()=>null);
+      if (!file) file=await fetchWork(this.date,id);
+      if (file && generation===this.generation && !this.id && this.detectedId===id) await this.loadFile(file,false,id);
     } catch {
       // The file picker remains available when a shared work cannot be opened.
     }
@@ -232,24 +279,32 @@ export class MarkerAR {
     }
     context.drawImage(video,0,0,width,height);
     const code=jsQR(context.getImageData(0,0,width,height).data,width,height,{inversionAttempts:'dontInvert'});
-    if (!code || !markerPattern.test(code.data)) return;
-    this.detectedId=code.data;
-    if (!this.lockedId && this.id && code.data!==this.id) {
+    const marker=code && readMarker(code.data);
+    if (!marker) return;
+    const {id,date}=marker;
+    if ((this.publicView || date) && date!==this.date) {
       this.setVisible(false);
-      this.id=null;
-    }
-    if (!this.id) {
-      if (this.attemptedId===code.data) return;
-      this.attemptedId=code.data;
-      this.onFileNeeded?.(code.data);
-      this.status(code.data.slice(-2)+'번 표식이에요. 연결된 작품 파일을 열어 주세요.');
-      const generation=this.generation;
-      this.findWork(code.data,generation);
+      this.status(this.publicView?'웹앱을 열 때 찍었던 QR을 다시 비춰 주세요.':'선택한 수업 날짜의 QR을 비춰 주세요.');
       return;
     }
-    if (code.data!==this.id) {
+    this.detectedId=id;
+    if (!this.lockedId && this.id && id!==this.id) {
       this.setVisible(false);
-      this.status('이 작품은 '+this.id.slice(-2)+'번 표식에 연결돼 있어요.');
+      this.id=null;
+      this.attemptedId=null;
+    }
+    if (!this.id) {
+      if (this.attemptedId===id) return;
+      this.attemptedId=id;
+      this.onFileNeeded?.(id);
+      this.status(workLabel(this.date,id)+' 작품이 이 기기에 없으면 파일을 열어 주세요.');
+      const generation=this.generation;
+      this.findWork(id,generation);
+      return;
+    }
+    if (id!==this.id) {
+      this.setVisible(false);
+      this.status(this.publicView?'웹앱을 열 때 찍었던 QR을 다시 비춰 주세요.':'이 작품은 '+this.id.slice(-2)+'번 표식에 연결돼 있어요.');
       return;
     }
     const pose=markerPose(code.location,width,height);
@@ -259,9 +314,10 @@ export class MarkerAR {
     this.anchor.position.lerp(pose.position,amount);
     this.anchor.quaternion.slerp(pose.rotation,amount);
     this.setVisible(true);
-    this.status(this.settings.rule?.trigger==='tap'
-      ? '캐릭터를 터치해 만든 반응을 시험해요.'
-      : '표식 위에 내 생명체가 나타났어요.');
+    const label=this.publicView?'':workLabel(this.date,this.id)+' · ';
+    this.status(label+(this.settings.rule?.trigger==='tap'
+      ? '캐릭터를 터치해 보세요.'
+      : '작품이 표식 위에 나타났어요.'));
   }
 
   frame(now) {

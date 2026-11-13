@@ -122,6 +122,8 @@ footer a{color:inherit;text-underline-offset:3px}
 .auto-rigger .rig-options button{border-radius:7px;padding:4px 9px}
 
 #view-garden{white-space:nowrap;font-size:12px}
+.garden-tools{display:flex;align-items:center;gap:12px}
+.garden-tools a{color:var(--green);font-size:12px;white-space:nowrap;text-underline-offset:3px}
 .rule-card{min-width:0}
 .rule-blocks{display:grid;gap:6px;margin-top:10px}
 .rule-block{display:grid;grid-template-columns:minmax(62px,auto) minmax(0,1fr);align-items:center;gap:6px;margin:0;padding:6px 8px;border-radius:8px;background:#e5efe3}
@@ -133,25 +135,46 @@ footer a{color:inherit;text-underline-offset:3px}
 #extension-place-setting{margin:0 0 12px}
 #extension-settings summary{cursor:pointer;font-weight:750;font-size:13px}
 .marker-controls{display:grid;gap:8px;margin-bottom:15px}
-.marker-controls label{margin:0}
+.marker-controls label,.marker-controls p{margin:0}
+.marker-controls p{font-size:13px;color:var(--muted)}
 #marker-number{width:78px;min-height:44px;padding:6px;border:1px solid #aebeb4;border-radius:7px;color:var(--ink);font:inherit}
-.marker-sheet{display:grid;justify-items:center;justify-self:start;background:#fff;padding:8px;max-width:100%;color:#141414}
-#marker-qr{display:block;width:min(100%,150px);height:auto;image-rendering:pixelated}
+#work-date,#view-date,#print-date{width:fit-content;min-height:44px;padding:6px;border:1px solid #aebeb4;border-radius:7px;color:var(--ink);background:#fff;font:inherit}
+#marker-print{width:min(calc(100% - 32px),650px);max-height:calc(100% - 32px);padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--cream);color:var(--ink)}
+#marker-print::backdrop,#garden-date::backdrop{background:#19372e99}
+.marker-print-header h2{margin:0;font-size:23px}
+.marker-print-header p{margin:6px 0 12px;font-size:13px}
+.marker-print-header label{display:block}
+.marker-print-actions{display:flex;gap:8px}
+#marker-print-date{margin:12px 0 0;font-size:13px;font-weight:750}
+.marker-print-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}
+.marker-print-card{display:grid;justify-items:center;background:#fff;border:1px dashed #a8b4a9;border-radius:4px;padding:6px 6px 10px;color:#111}
+.marker-print-card canvas{display:block;width:min(100%,136px);height:auto;image-rendering:pixelated}
+.marker-print-card strong{font-size:25px;line-height:1;font-variant-numeric:tabular-nums}
+#garden-date{width:min(calc(100% - 32px),380px);padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--cream);color:var(--ink)}
+#garden-date label{display:block}
+#garden-date h2{margin:0 0 14px}
+.public-mode>header,.public-mode>main,.public-mode>footer{display:none}
+.public-viewer{max-width:480px;margin:auto;padding:clamp(34px,12vh,100px) 22px}
+.public-viewer h1{font-size:clamp(30px,8vw,42px)}
+.public-viewer p{line-height:1.55}
 #ar-video,#ar-canvas{position:absolute;inset:0;width:100%;height:100%}
 #ar-video{object-fit:cover}
 #ar-canvas{touch-action:none}
 .ar-file-label{position:absolute;z-index:3;left:50%;bottom:max(22px,env(safe-area-inset-bottom));transform:translateX(-50%);min-height:44px;padding:10px 13px;background:#fff;color:var(--ink);border-radius:9px;white-space:nowrap;cursor:pointer}
 .ar-work-input{position:absolute;clip-path:inset(50%);width:1px;height:1px;opacity:0}
 .ar-overlay:has(.ar-work-input:focus-visible) .ar-file-label{outline:3px solid #397c65}
-@media(max-width:650px){#view-garden{min-height:36px;align-self:flex-end}.rule-block select{font-size:14px}}
+@media(max-width:900px){.garden-tools{gap:7px;flex-wrap:wrap;justify-content:flex-end}}
+@media(max-width:650px){.garden-tools{align-self:flex-end}#view-garden{min-height:36px}.rule-block select{font-size:14px}}
 @media print{
-  body{background:white}
-  body>:not(main),main>:not(.workspace),.workspace>:not(.control-panel),
-  .control-panel>:not(#panel-place),#panel-place>:not(.marker-controls),
-  .marker-controls>:not(#marker-sheet){display:none!important}
-  main,.control-panel{padding:0;border:0;background:white}
-  .workspace{display:block}
-  #marker-sheet{max-width:none;padding:0;break-inside:avoid}
-  #marker-qr{width:17cm;height:17cm}
+  @page{size:A4 portrait;margin:10mm}
+  body:has(#marker-print[open]){background:white}
+  body:has(#marker-print[open])>:not(#marker-print){display:none!important}
+  #marker-print[open]{display:block;position:static;width:100%;height:auto;max-width:none;max-height:none;overflow:visible;margin:0;padding:0;border:0}
+  #marker-print::backdrop,.marker-print-header{display:none}
+  #marker-print-date{margin:0 0 2mm}
+  .marker-print-grid{gap:2mm;margin:0}
+  .marker-print-card{height:52mm;padding:1mm;border-color:#bbb;border-radius:0;break-inside:avoid;align-content:center}
+  .marker-print-card canvas{width:42mm}
+  .marker-print-card strong{font-size:17pt}
 }
 
