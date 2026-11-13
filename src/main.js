@@ -16,12 +16,12 @@ const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new 
 const initialDate=classDate(params.get('date'))??today;
 for (const id of ['work-date','view-date','print-date']) ui(id).value=initialDate;
 const intro = {
-  make:'실험실을 탈출한 생명체들이 모카가든에 자리 잡았어요. 그중 하나에 내 특징을 담아 봐요.',
-  move:'내 특징이 잘 드러나는 동작을 골라 내가 만든 생명체에 입혀요.',
-  ability:'내가 만든 생명체가 정원에서 무엇을 하는지 골라 봐요.',
-  place:'모카가든에서 내가 만든 생명체가 살 자리를 골라요.',
+  make:'바나바와 친구들이 자리 잡은 공원은 모카가든이에요. 좋아하는 일이나 자주 하는 행동을 떠올려 봐요. 그 모습을 몸의 모양과 움직임으로 만들어 봐요.',
+  move:'평소 내 모습을 떠올리며, 만든 몸에 입힐 동작을 3초 동안 녹화해요.',
+  ability:'만든 몸의 어느 부분이 언제, 어떻게 움직일지 정해요.',
+  place:'모카가든에서 ‘또 다른 나’를 놓을 자리를 골라요.',
 };
-const labels={make:'형태 편집 중',move:'동작 미리 보기',ability:'기능 미리 보기',place:'내 자화상'};
+const labels={make:'형태 편집 중',move:'동작 미리 보기',ability:'기능 미리 보기',place:'또 다른 나'};
 const avatar=createAvatar();
 const scene=new THREE.Scene();
 scene.add(avatar.model);
