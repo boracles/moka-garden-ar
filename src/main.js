@@ -2,7 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
-import {applyBrush,createAvatar,extensionClip,palette,partReaction,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
+import {applyBrush,createAvatar,extensionClip,palette,partReaction,reflectedBrush,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
 import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
 import {PartRule,partActions} from './part-rules.js';
@@ -497,6 +497,7 @@ function setExample(visible) {
   ui('sculpt-options').hidden=visible;
   ui('example-info').hidden=!visible;
   ui('brush-cursor').hidden=true;
+  ui('mirror-cursor').hidden=true;
   for (const button of document.querySelectorAll('[data-tool]')) button.disabled=visible;
   if (visible) {
     example??=createAvatar({example:true});
@@ -543,6 +544,7 @@ function setStep(value) {
   ui('brush-rail').hidden=value!=='make';
   ui('stage-toolbar').hidden=value!=='make';
   ui('brush-cursor').hidden=true;
+  ui('mirror-cursor').hidden=true;
   ui('workspace').classList.toggle('sculpt-mode',value==='make');
   ui('workspace').classList.toggle('ability-mode',value==='ability');
   if (orbit) orbit.enabled=step!=='make' || tool==='orbit';
@@ -567,6 +569,7 @@ function selectTool(value) {
   if (orbit) orbit.enabled=tool==='orbit';
   ui('viewport').classList.toggle('orbit-mode',tool==='orbit');
   ui('brush-cursor').hidden=true;
+  ui('mirror-cursor').hidden=true;
   for (const item of document.querySelectorAll('[data-tool]')) {
     item.setAttribute('aria-pressed',String(item.dataset.tool===tool));
   }
@@ -608,6 +611,8 @@ if (renderer) {
   const canvas=renderer.domElement;
   const raycaster=new THREE.Raycaster();
   const cursor=ui('brush-cursor');
+  const mirrorCursor=ui('mirror-cursor');
+  const symmetry=ui('brush-symmetry');
   const radius=()=>.065+Number(ui('brush-size').value)*.021;
   function intersect(event) {
     const bounds=canvas.getBoundingClientRect();
@@ -615,22 +620,33 @@ if (renderer) {
     raycaster.setFromCamera(p,camera);
     return raycaster.intersectObjects(avatar.surfaces,false)[0];
   }
-  function makeMark(hit,distance) {
-    const mesh=hit.object;
-    if (!brush.changes.has(mesh)) {
-      brush.changes.set(mesh,mesh.geometry.getAttribute(brush.attribute).array.slice());
-    }
-    applyBrush(hit,brush.tool,brush.radius,distance,brush.color,brush.strength);
+  function brushHits(hit) {
+    if (!hit) return [];
+    const reflected=(brush?.symmetry??symmetry.checked)?reflectedBrush(avatar,hit):null;
+    return reflected?[hit,reflected]:[hit];
   }
-  function positionCursor(event,hit) {
-    cursor.hidden=!hit;
-    if (!hit) return;
+  function makeMark(hits,distance) {
+    for (const {object:mesh} of hits) {
+      if (!brush.changes.has(mesh)) {
+        brush.changes.set(mesh,mesh.geometry.getAttribute(brush.attribute).array.slice());
+      }
+    }
+    applyBrush(hits,brush.tool,brush.radius,distance,brush.color,brush.strength);
+  }
+  function positionCursors(hits) {
     const rect=canvas.getBoundingClientRect();
     const size=(brush?.radius??radius())*2*camera.zoom*rect.height/(camera.top-camera.bottom);
-    cursor.style.left=(event.clientX-rect.left)+'px';
-    cursor.style.top=(event.clientY-rect.top)+'px';
-    cursor.style.width=cursor.style.height=size+'px';
+    for (const [index,indicator] of [cursor,mirrorCursor].entries()) {
+      const hit=hits[index];
+      indicator.hidden=!hit || (index===1 && hit.point.distanceToSquared(hits[0].point)<.000025);
+      if (indicator.hidden) continue;
+      const point=hit.point.clone().project(camera);
+      indicator.style.left=(point.x+1)*rect.width/2+'px';
+      indicator.style.top=(1-point.y)*rect.height/2+'px';
+      indicator.style.width=indicator.style.height=size+'px';
+    }
   }
+  symmetry.addEventListener('change',()=>positionCursors([]));
   canvas.addEventListener('pointerdown',event=>{
     if (step!=='make'||showingExample||tool==='orbit'||brush||transientOrbit!==null||event.button>0) return;
     stopPreview();
@@ -638,31 +654,33 @@ if (renderer) {
     if (!hit) {
       transientOrbit=event.pointerId;
       orbit.enabled=true;
-      cursor.hidden=true;
+      positionCursors([]);
       return;
     }
     canvas.setPointerCapture(event.pointerId);
     brush={
       id:event.pointerId,x:event.clientX,y:event.clientY,changes:new Map(),tool,
       attribute:tool==='paint'?'color':'position',
+      symmetry:symmetry.checked,
       radius:radius(),
       color:paintColor.clone(),
       strength:.26+Number(ui('brush-strength').value)*.124,
     };
-    positionCursor(event,hit);
-    if (tool==='paint') makeMark(hit,1);
+    const hits=brushHits(hit);
+    positionCursors(hits);
+    if (tool==='paint') makeMark(hits,1);
   },true);
   canvas.addEventListener('pointermove',event=>{
     if (step!=='make'||showingExample||tool==='orbit'||transientOrbit!==null) return;
-    const hit=intersect(event);
-    positionCursor(event,hit);
+    const hits=brushHits(intersect(event));
+    positionCursors(hits);
     if (event.pointerId!==brush?.id) return;
     const distance=Math.hypot(event.clientX-brush.x,event.clientY-brush.y);
     if (distance<4) return;
     brush.x=event.clientX;
     brush.y=event.clientY;
-    if (!hit) return;
-    makeMark(hit,distance);
+    if (!hits.length) return;
+    makeMark(hits,distance);
   });
   function finishBrush(event) {
     if (transientOrbit===event.pointerId) {
@@ -675,10 +693,10 @@ if (renderer) {
       invalidateBodyRig();
     }
     brush=null;
-    if (event.pointerType==='touch') cursor.hidden=true;
+    if (event.pointerType==='touch') positionCursors([]);
   }
   for (const name of ['pointerup','pointercancel','lostpointercapture']) canvas.addEventListener(name,finishBrush);
-  canvas.addEventListener('pointerleave',()=>{cursor.hidden=true;});
+  canvas.addEventListener('pointerleave',()=>positionCursors([]));
 }
 
 ui('undo').addEventListener('click',()=>{

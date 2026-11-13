@@ -88,6 +88,7 @@ export function createAvatar({example=false}={}) {
   model.name='GardenCreature';
   const joints={};
   const surfaces=[];
+  const symmetryPairs=new Map();
   const parts=new Map();
 
   function joint(parent,name,x=0,y=0,z=0) {
@@ -227,6 +228,13 @@ export function createAvatar({example=false}={}) {
       }
     }
     if (!created.length) return false;
+    if (kind==='ears' || kind==='arms' || kind==='legs') {
+      const half=created.length/2;
+      for (let i=0;i<half;i++) {
+        symmetryPairs.set(created[i],created[i+half]);
+        symmetryPairs.set(created[i+half],created[i]);
+      }
+    }
     parts.set(kind,created);
     if (kind==='head') {
       positionEars();
@@ -239,6 +247,7 @@ export function createAvatar({example=false}={}) {
     const meshes=parts.get(kind);
     if (!meshes) return;
     for (const mesh of meshes) {
+      symmetryPairs.delete(mesh);
       mesh.removeFromParent();
       mesh.geometry.dispose();
       mesh.skeleton?.dispose();
@@ -297,7 +306,12 @@ export function createAvatar({example=false}={}) {
   }
 
   const rest=Object.fromEntries(Object.entries(joints).map(([name,bone])=>[name,bone.quaternion.clone()]));
-  return {model,joints,rest,surfaces,parts,addPart,removePart,positionExtension};
+  function mirrorSurface(mesh) {
+    if (mesh.parent===extension && extensionPlace==='side') return null;
+    return symmetryPairs.get(mesh)??mesh;
+  }
+
+  return {model,joints,rest,surfaces,parts,addPart,removePart,positionExtension,mirrorSurface};
 }
 
 export function resetPose(avatar) {
@@ -360,24 +374,64 @@ function surfaceNeighbors(geometry) {
   return result;
 }
 
-export function applyBrush(hit,tool,radius,distance,color,pressure=1) {
-  const geometry=hit.object.geometry;
+export function reflectedBrush(avatar,hit) {
+  const object=avatar.mirrorSurface(hit.object);
+  if (!object) return null;
+  const {model}=avatar;
+  model.updateWorldMatrix(true,true);
+  const modelInverse=model.matrixWorld.clone().invert();
+  const targetInverse=object.matrixWorld.clone().invert();
+  const point=hit.point.clone().applyMatrix4(modelInverse);
+  point.x=-point.x;
+  point.applyMatrix4(model.matrixWorld);
+  const normal=hit.face.normal.clone()
+    .transformDirection(hit.object.matrixWorld)
+    .transformDirection(modelInverse);
+  normal.x=-normal.x;
+  normal.transformDirection(model.matrixWorld).transformDirection(targetInverse);
+  return {object,point,face:{normal}};
+}
+
+export function applyBrush(hits,tool,radius,distance,color,pressure=1) {
+  const samplesByMesh=new Map();
+  for (const {object,point,face} of hits) {
+    if (!samplesByMesh.has(object)) samplesByMesh.set(object,[]);
+    samplesByMesh.get(object).push({
+      center:object.worldToLocal(point.clone()),
+      normal:face.normal.clone().normalize(),
+    });
+  }
+  for (const [mesh,samples] of samplesByMesh) {
+    applyBrushSamples(mesh,samples,tool,radius,distance,color,pressure);
+  }
+}
+
+function applyBrushSamples(mesh,samples,tool,radius,distance,color,pressure) {
+  const geometry=mesh.geometry;
   const key=tool==='paint'?'color':'position';
   const attribute=geometry.getAttribute(key);
   const positions=geometry.getAttribute('position').array;
-  const center=hit.object.worldToLocal(hit.point.clone());
-  const normal=hit.face.normal.clone().normalize();
   const radiusSquared=radius*radius;
   const strength=Math.min(.027,Math.max(.008,distance*.0022))*pressure*(tool==='push'?-1:1);
   const adjacency=tool==='smooth'?surfaceNeighbors(geometry):null;
   const output=attribute.array.slice();
+  const normal=new THREE.Vector3();
   for (let i=0;i<positions.length;i+=3) {
-    const dx=positions[i]-center.x;
-    const dy=positions[i+1]-center.y;
-    const dz=positions[i+2]-center.z;
-    const d=dx*dx+dy*dy+dz*dz;
-    if (d>=radiusSquared) continue;
-    const influence=(1-d/radiusSquared)**2;
+    let influence=0;
+    let totalWeight=0;
+    normal.set(0,0,0);
+    for (const sample of samples) {
+      const dx=positions[i]-sample.center.x;
+      const dy=positions[i+1]-sample.center.y;
+      const dz=positions[i+2]-sample.center.z;
+      const d=dx*dx+dy*dy+dz*dz;
+      if (d>=radiusSquared) continue;
+      const weight=(1-d/radiusSquared)**2;
+      influence=Math.max(influence,weight);
+      totalWeight+=weight;
+      normal.addScaledVector(sample.normal,weight);
+    }
+    if (!influence) continue;
     if (tool==='paint') {
       const coverage=Math.min(1,influence*2.15*pressure);
       output[i]+=(color.r-output[i])*coverage;
@@ -391,12 +445,13 @@ export function applyBrush(hit,tool,radius,distance,color,pressure=1) {
         output[i+k]+=(mean-positions[i+k])*influence*.58*pressure;
       }
     } else {
-      output[i]+=normal.x*strength*influence;
-      output[i+1]+=normal.y*strength*influence;
-      output[i+2]+=normal.z*strength*influence;
+      const displacement=strength*influence/totalWeight;
+      output[i]+=normal.x*displacement;
+      output[i+1]+=normal.y*displacement;
+      output[i+2]+=normal.z*displacement;
     }
   }
-  restoreBrushAttribute(hit.object,key,output);
+  restoreBrushAttribute(mesh,key,output);
 }
 
 export function snapshotModel(avatar) {

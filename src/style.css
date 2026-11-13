@@ -31,6 +31,7 @@ h1{margin:0;font-size:clamp(28px,3.4vw,45px);line-height:1.12;letter-spacing:-.0
 .viewport.orbit-mode canvas{cursor:grab}
 .viewport.orbit-mode canvas:active{cursor:grabbing}
 .brush-cursor{position:absolute;z-index:1;border:1px solid #255743;border-radius:50%;box-shadow:0 0 0 1px #fff9;pointer-events:none;transform:translate(-50%,-50%)}
+.mirror-cursor{border-style:dashed}
 .stage-toolbar{position:absolute;z-index:2;top:12px;right:12px;display:flex;gap:7px}
 .stage-toolbar button{min-height:38px;padding:6px 10px;border:1px solid #a9bdb0;border-radius:8px;background:#fdfdf5;color:var(--ink);font-size:12px;font-weight:750}
 .stage-toolbar [aria-pressed=true]{background:var(--green);border-color:var(--green);color:white}
@@ -46,6 +47,8 @@ legend,label{font-weight:750;font-size:14px;margin-bottom:8px}
 .brush-control{display:grid;grid-template-columns:36px 1fr;align-items:center;gap:9px}
 .brush-control label{margin:0;font-size:12px}
 .brush-control input{width:100%;accent-color:var(--green);min-height:38px}
+.brush-symmetry{display:flex;align-items:center;gap:8px;width:fit-content;min-height:38px;margin:0;cursor:pointer}
+.brush-symmetry input{width:18px;height:18px;margin:0;accent-color:var(--green)}
 .part-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}
 .part-grid button{font-size:11px;white-space:nowrap;padding:6px 2px}
 .part-grid [data-part=extension]{grid-column:1/-1}
