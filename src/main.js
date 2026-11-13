@@ -6,7 +6,7 @@ import {applyBrush,bendableParts,clayPartLabels,createAvatar,extensionClip,palet
 import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
 import {PartRule,partActions} from './part-rules.js';
-import {MarkerAR,classDate,exhibitionWork,markerCount,markerId,registeredMarkerWork,saveMarkerWork,showMarker,workLabel} from './marker-ar.js';
+import {MarkerAR,classDate,exhibitionWork,markerCount,markerId,publishMarkerWork,registeredMarkerWork,saveMarkerWork,showMarker,workLabel} from './marker-ar.js';
 import {clearClayFusion,hasClayFusion,joinClay,showClaySources} from './join-clay.js';
 import {createGrab} from './grab-clay.js';
 
@@ -1085,7 +1085,7 @@ ui('save-marker-work').addEventListener('click',async()=>{
     const {file,work}=await registeredMarkerWork(date,id);
     if (revision!==workRevision || step!=='place') return;
     const url=URL.createObjectURL(file);
-    registration={id,date,work,url};
+    registration={id,date,file,work,url,published:false};
     const label=workLabel(date,id);
     canvas.setAttribute('aria-label',label+' 작품 QR');
     ui('registered-marker-label').textContent=label+' 작품 QR';
@@ -1115,6 +1115,7 @@ async function openMarkerAR(work,id,date,{publicView=false,onTestProgress}={}) {
   ui('ar-overlay').hidden=false;
   ui('finish-ar-test').hidden=true;
   ui('ar-test-checks').hidden=true;
+  ui('ar-publication-status').hidden=true;
   ui('ar-status').textContent='뒤 카메라를 준비하고 있어요.';
   ui('close-ar').focus();
   try {
@@ -1138,7 +1139,8 @@ ui('start-ar').addEventListener('click',()=>{
         :work.settings.rule?.trigger==='tap'?'캐릭터를 터치해 반응 확인':'표식에서 나타날 때 반응 확인';
       if (!motion || !rule) return;
       ui('finish-ar-test').hidden=false;
-      ui('place-status').textContent='완료 · 녹화한 전신 동작과 추가한 반응을 확인했어요.';
+      ui('finish-ar-test').textContent=current.published?'돌아가기':'작품 확정';
+      if (!current.published) ui('place-status').textContent='QR 테스트를 마쳤어요. 작품을 확정하면 관객도 볼 수 있어요.';
       ui('start-ar').textContent='QR 다시 테스트하기';
     },
   });
@@ -1195,13 +1197,37 @@ ar.onFileNeeded=id=>{
   ui('ar-file-label').textContent=id?'작품 파일 열기 ('+id+'.glb)':'작품 파일 열기';
 };
 function closeAR() {
+  if (ui('finish-ar-test').disabled) return;
   ar.stop();
   ui('ar-overlay').hidden=true;
   ui('finish-ar-test').hidden=true;
   arReturnFocus?.focus();
 }
 ui('close-ar').addEventListener('click',closeAR);
-ui('finish-ar-test').addEventListener('click',closeAR);
+ui('finish-ar-test').addEventListener('click',async event=>{
+  const finish=event.currentTarget;
+  const current=registration;
+  if (!current || finish.disabled || finish.hidden) return;
+  if (current.published) return closeAR();
+  const status=ui('ar-publication-status');
+  status.hidden=true;
+  finish.disabled=true;
+  ui('close-ar').disabled=true;
+  finish.textContent='작품을 공개하고 있어요';
+  try {
+    await publishMarkerWork(current.date,current.id,current.file);
+    current.published=true;
+    ui('place-status').textContent='완료 · 관객도 같은 QR로 내 작품을 볼 수 있어요.';
+  } catch(error) {
+    status.textContent=error.message;
+    status.hidden=false;
+  } finally {
+    finish.disabled=false;
+    ui('close-ar').disabled=false;
+    finish.textContent='작품 확정';
+  }
+  if (current.published) closeAR();
+});
 ui('sound-ar').addEventListener('click',event=>playCreatureSound(ui('ar-status'),Number(event.currentTarget.dataset.pitch)));
 window.addEventListener('keydown',event=>{
   if (event.key==='Escape' && !ui('ar-overlay').hidden) closeAR();

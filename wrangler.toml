@@ -1,0 +1,15 @@
+name = "moka-garden-publication"
+main = "server/publication.js"
+compatibility_date = "2025-12-01"
+workers_dev = true
+
+[vars]
+FRONTEND_ORIGIN = "https://boracles.github.io"
+
+[[durable_objects.bindings]]
+name = "WORKS"
+class_name = "PublishedWork"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PublishedWork"]

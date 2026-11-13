@@ -9,6 +9,7 @@ const square=[[-.5,.5],[.5,.5],[.5,-.5],[-.5,-.5]];
 const verticalFov=54;
 const storageName='moka-garden-works';
 const publicSite=new URL('https://boracles.github.io/moka-garden-ar/');
+const publicationBase=import.meta.env.VITE_MOKA_PUBLICATION_URL;
 export const markerCount=10;
 
 export function markerId(value) {
@@ -84,14 +85,38 @@ async function fetchWork(date,id) {
   return response.ok ? response.blob() : null;
 }
 
-export async function exhibitionWork(date,id) {
+function publicationUrl(date,id) {
+  return new URL('works/'+date+'/'+id+'.glb',publicationBase.replace(/\/+$/,'')+'/');
+}
+
+export async function publishMarkerWork(date,id,file) {
+  if (!publicationBase) throw new Error('온라인 작품 저장소를 연결한 뒤 공개할 수 있어요.');
+  const code=new URLSearchParams(location.hash.slice(1)).get('class');
+  if (!code) throw new Error('선생님에게 받은 수업 링크로 열면 작품을 공개할 수 있어요.');
+  const response=await fetch(publicationUrl(date,id),{
+    method:'PUT',body:file,headers:{'Content-Type':'model/gltf-binary',Authorization:'Bearer '+code},
+    signal:AbortSignal.timeout(30000),
+  }).catch(()=>null);
+  if (response?.status===204) return;
+  if (response?.status===403) throw new Error('수업 링크와 작품의 날짜가 맞는지 선생님과 확인해 주세요.');
+  if (response?.status===409) throw new Error('이 QR에는 이미 확정된 작품이 있어요. 선생님에게 번호를 확인해 주세요.');
+  if (response?.status===413) throw new Error('작품 파일이 너무 커서 공개하지 못했어요.');
+  throw new Error('작품을 공개하지 못했어요. 인터넷을 확인한 뒤 작품 확정을 다시 눌러 주세요.');
+}
+
+export async function exhibitionWork(date,id,{includeDraft=false}={}) {
   const read=async file=>{
     if (!file) return null;
     const work=await loadWork(await file.arrayBuffer()).catch(()=>null);
     return work?.date===date && work.id===id ? work : null;
   };
+  if (publicationBase) {
+    const uploaded=await fetch(publicationUrl(date,id),{signal:AbortSignal.timeout(8000)})
+      .then(response=>response.ok ? response.blob() : null).then(read).catch(()=>null);
+    if (uploaded) return uploaded;
+  }
   const published=await read(await fetchWork(date,id).catch(()=>null));
-  if (published && !published.model.userData.gardenDemo) return published;
+  if (!includeDraft || (published && !published.model.userData.gardenDemo)) return published;
   const saved=await read(await readSavedWork(date,id).catch(()=>null));
   return saved??published;
 }
@@ -289,9 +314,13 @@ export class MarkerAR {
 
   async findWork(id,generation) {
     try {
-      let file=await readSavedWork(this.date,id).catch(()=>null);
-      if (!file) file=await fetchWork(this.date,id);
-      if (file && generation===this.generation && !this.id && this.detectedId===id) await this.loadFile(file,false,id);
+      const work=await exhibitionWork(this.date,id,{includeDraft:true});
+      if (work && generation===this.generation && !this.id && this.detectedId===id) {
+        this.id=work.id;
+        this.useWork(work);
+        this.onFileNeeded?.(null);
+        this.status(workLabel(this.date,id)+' 작품을 열었어요.');
+      }
     } catch {
       // The file picker remains available when a shared work cannot be opened.
     }
