@@ -6,7 +6,7 @@ import {applyBrush,bendableParts,clayPartLabels,createAvatar,extensionClip,palet
 import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
 import {PartRule,partActions} from './part-rules.js';
-import {MarkerAR,classDate,exhibitionWork,markerCount,markerId,saveMarkerWork,showMarker,workLabel} from './marker-ar.js';
+import {MarkerAR,classDate,exhibitionWork,markerCount,markerId,registeredMarkerWork,saveMarkerWork,showMarker,workLabel} from './marker-ar.js';
 import {clearClayFusion,hasClayFusion,joinClay,showClaySources} from './join-clay.js';
 import {createGrab} from './grab-clay.js';
 
@@ -109,6 +109,9 @@ let example=null;
 let showingExample=false;
 const clayFusionJobs=new WeakMap();
 const undoStack=[];
+let registration=null;
+let registering=false;
+let workRevision=0;
 const motion=new MotionCapture(ui('motion-video'),avatar,{
   status:message=>{ui('motion-status').textContent=message;},
   tracking:visible=>{
@@ -123,6 +126,7 @@ const motion=new MotionCapture(ui('motion-video'),avatar,{
     updateMotionButtons();
   },
   complete:clip=>{
+    invalidateRegistration();
     if (!motionClip) ui('use-movement').checked=true;
     motionClip=clip;
     closeCamera();
@@ -151,7 +155,7 @@ function updateMotionButtons() {
   ui('replay').disabled=!motionClip || openingCamera || Boolean(motion.recording);
   ui('download').disabled=!riggedAvatar || joining || openingCamera || motion.active;
   ui('rig-edit').disabled=openingCamera || Boolean(motion.recording);
-  ui('start-ar').disabled=!renderer||joining||!markerId(ui('marker-number').value)||!classDate(ui('work-date').value);
+  ui('start-ar').disabled=!renderer||!registration;
   ui('view-garden').disabled=!renderer;
 }
 
@@ -388,6 +392,7 @@ ui('rig-symmetry').addEventListener('change',event=>{
 ui('rig-apply').addEventListener('click',()=>{
   try {
     setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+    invalidateRegistration();
     ui('motion-status').textContent='뼈대가 연결됐어요. 앞 카메라를 켜서 함께 움직여 봐요.';
     waitForClayFusion()?.then(()=>{
       if (step==='move' && riggedAvatar && !ui('open-camera').disabled) ui('open-camera').focus();
@@ -398,6 +403,7 @@ ui('rig-apply').addEventListener('click',()=>{
 });
 
 ui('rig-edit').addEventListener('click',()=>{
+  invalidateRegistration();
   closeCamera();
   motionClip=null;
   ui('use-movement').checked=false;
@@ -614,6 +620,7 @@ function selectTool(value) {
 }
 
 function rememberEdit(edit) {
+  invalidateRegistration();
   undoStack.push(edit);
   if (undoStack.length>25) undoStack.shift();
   refreshEditor();
@@ -782,6 +789,7 @@ if (renderer) {
 ui('undo').addEventListener('click',()=>{
   const last=undoStack.pop();
   if (!last) return;
+  invalidateRegistration();
   if (last.part) {
     stopPreview();
     avatar.removePart(last.part);
@@ -857,28 +865,19 @@ function gardenWork() {
   return {model,animations,settings};
 }
 
-async function downloadWork(status,id,date) {
+async function downloadWork(status) {
   try {
     await waitForClayFusion();
     const {model,animations}=gardenWork();
-    if (!id && !riggedAvatar && !animations.length) return;
-    if (id) {
-      model.userData.gardenMarker=id;
-      model.userData.gardenDate=date;
-    }
+    if (!riggedAvatar && !animations.length) return;
     const glb=await new GLTFExporter().parseAsync(model,{binary:true,animations});
     const file=new Blob([glb],{type:'model/gltf-binary'});
-    if (id) await saveMarkerWork(date,id,file).catch(()=>{});
     const url=URL.createObjectURL(file);
     const link=document.createElement('a');
     link.href=url;
-    link.download=id?date+'-'+id+'.glb':'moka-garden-creature.glb';
+    link.download='moka-garden-creature.glb';
     link.click();
     setTimeout(()=>URL.revokeObjectURL(url),1500);
-    if (id) {
-      status.textContent=workLabel(date,id)+' 작품을 저장했어요.';
-      return;
-    }
     status.textContent=animations.length?'동작이 담긴 3D 작품 파일을 저장했어요.':'뼈대가 담긴 3D 작품 파일을 저장했어요.';
   } catch(error) {
     status.textContent='작품 파일을 저장하지 못했어요. 잠시 뒤 다시 눌러 주세요.';
@@ -899,7 +898,10 @@ function sampleClay(now) {
   if (time<3) return;
   const moved=frames.some(frame=>Math.abs(frame.amount-frames[0].amount)>.02);
   const {part}=clayRecording;
-  if (moved) clayClips.set(part,extensionClip(frames,part));
+  if (moved) {
+    clayClips.set(part,extensionClip(frames,part));
+    invalidateRegistration();
+  }
   clayRecording=null;
   ui('clay-recording-status').textContent=moved
     ? '구부리는 동작을 저장했어요.'
@@ -945,6 +947,7 @@ ui('extension-settings').addEventListener('toggle',()=>{
   if (!ui('extension-settings').open) clearReactionPreview();
 });
 ui('extension-place').addEventListener('change',event=>{
+  invalidateRegistration();
   avatar.positionExtension(event.target.value);
   if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
   updateClayFusion(avatar.model);
@@ -968,7 +971,7 @@ function updateMarkerNumber() {
   const input=ui('marker-number');
   const id=markerId(input.value);
   const date=classDate(ui('work-date').value);
-  ui('save-marker-work').disabled=!id||!date;
+  ui('save-marker-work').disabled=!id||!date||registering||Boolean(registration);
   updateMotionButtons();
   input.setAttribute('aria-invalid',String(Boolean(input.value && !id)));
   ui('marker-number-help').textContent=id&&date
@@ -977,10 +980,25 @@ function updateMarkerNumber() {
   return id;
 }
 
-for (const id of ['marker-number','work-date']) ui(id).addEventListener('input',()=>{
+function invalidateRegistration() {
+  workRevision++;
+  if (!registration) return;
+  URL.revokeObjectURL(registration.url);
+  registration=null;
+  ui('registered-marker').hidden=true;
+  ui('registered-marker-image').replaceChildren();
+  ui('download-marker-work').removeAttribute('href');
+  ui('place-status').textContent='작품이 바뀌었어요. 다시 등록하고 QR을 테스트해 주세요.';
   updateMarkerNumber();
-  ui('place-status').textContent='';
-});
+}
+
+for (const id of ['marker-number','work-date','place-note','rule-trigger','rule-part','rule-action',
+  'rule-count','rule-size','use-sound','sound-pitch','use-movement','motion-speed']) {
+  ui(id).addEventListener('input',()=>{
+    invalidateRegistration();
+    if (id==='marker-number'||id==='work-date') updateMarkerNumber();
+  });
+}
 ui('marker-number').addEventListener('blur',event=>{
   const id=markerId(event.currentTarget.value);
   if (id) event.currentTarget.value=id.slice(-2);
@@ -1040,23 +1058,64 @@ ui('print-markers').addEventListener('click',()=>window.print());
 ui('close-marker-print').addEventListener('click',()=>printDialog.close());
 ui('print-date').addEventListener('input',renderPrintMarkers);
 
-ui('save-marker-work').addEventListener('click',()=>{
+ui('save-marker-work').addEventListener('click',async()=>{
   const id=markerId(ui('marker-number').value);
   const date=classDate(ui('work-date').value);
-  if (id && date) downloadWork(ui('place-status'),id,date);
+  if (!id || !date || registering || registration) return;
+  const revision=workRevision;
+  const status=ui('place-status');
+  registering=true;
+  updateMarkerNumber();
+  status.textContent='작품을 등록하고 있어요.';
+  try {
+    await waitForClayFusion();
+    if (revision!==workRevision || step!=='place') return;
+    const {model,animations}=gardenWork();
+    model.userData.gardenMarker=id;
+    model.userData.gardenDate=date;
+    const canvas=document.createElement('canvas');
+    const [glb]=await Promise.all([
+      new GLTFExporter().parseAsync(model,{binary:true,animations}),
+      showMarker(canvas,date,id),
+    ]);
+    if (revision!==workRevision || step!=='place') return;
+    await saveMarkerWork(date,id,new Blob([glb],{type:'model/gltf-binary'}));
+    const {file,work}=await registeredMarkerWork(date,id);
+    if (revision!==workRevision || step!=='place') return;
+    const url=URL.createObjectURL(file);
+    registration={id,date,work,url};
+    const label=workLabel(date,id);
+    canvas.setAttribute('aria-label',label+' 작품 QR');
+    ui('registered-marker-label').textContent=label+' 작품 QR';
+    ui('registered-marker-image').replaceChildren(canvas);
+    const download=ui('download-marker-work');
+    download.href=url;
+    download.download=date+'-'+id+'.glb';
+    ui('registered-marker').hidden=false;
+    ui('start-ar').textContent='QR 테스트하기';
+    status.textContent='작품을 등록했어요. QR을 테스트해 주세요.';
+  } catch(error) {
+    status.textContent='작품을 등록하지 못했어요. 다시 눌러 주세요.';
+    console.error(error);
+  } finally {
+    registering=false;
+    if (!registration && status.textContent==='작품을 등록하고 있어요.') status.textContent='작품을 다시 등록해 주세요.';
+    updateMarkerNumber();
+  }
 });
 
 let arReturnFocus=null;
-async function openMarkerAR(work,id,date,publicView=false) {
+async function openMarkerAR(work,id,date,{publicView=false,onTestRendered}={}) {
   arReturnFocus=document.activeElement;
   closeCamera();
   stopPreview();
   clearReactionPreview();
   ui('ar-overlay').hidden=false;
+  ui('finish-ar-test').hidden=true;
   ui('ar-status').textContent='뒤 카메라를 준비하고 있어요.';
   ui('close-ar').focus();
   try {
-    await ar.open({work,id,date,publicView});
+    await ar.open({work,id,date,publicView,onTestRendered});
   } catch(error) {
     if (!ui('ar-overlay').hidden) ui('ar-status').textContent=error.message;
     console.error(error);
@@ -1064,10 +1123,17 @@ async function openMarkerAR(work,id,date,publicView=false) {
 }
 
 ui('start-ar').addEventListener('click',()=>{
-  const id=markerId(ui('marker-number').value);
-  const date=classDate(ui('work-date').value);
-  if (!id || !date || !renderer) return;
-  openMarkerAR(gardenWork(),id,date);
+  const current=registration;
+  if (!current || !renderer) return;
+  const {id,date,work}=current;
+  openMarkerAR({...work,model:snapshotModel({model:work.model,rest:{}})},id,date,{
+    onTestRendered:()=>{
+      if (current!==registration || !ui('finish-ar-test').hidden) return;
+      ui('finish-ar-test').hidden=false;
+      ui('place-status').textContent='완료 · 등록한 QR에서 내 작품을 확인했어요.';
+      ui('start-ar').textContent='QR 다시 테스트하기';
+    },
+  });
 });
 ui('view-garden').addEventListener('click',()=>{
   if (renderer) ui('garden-date').showModal();
@@ -1103,7 +1169,7 @@ async function openPublicViewer() {
   button.hidden=false;
   button.addEventListener('click',()=>openMarkerAR({
     ...work,model:snapshotModel({model:work.model,rest:{}}),
-  },id,date,true));
+  },id,date,{publicView:true}));
 }
 ui('ar-work-file').addEventListener('change',async event=>{
   const file=event.target.files[0];
@@ -1123,9 +1189,11 @@ ar.onFileNeeded=id=>{
 function closeAR() {
   ar.stop();
   ui('ar-overlay').hidden=true;
+  ui('finish-ar-test').hidden=true;
   arReturnFocus?.focus();
 }
 ui('close-ar').addEventListener('click',closeAR);
+ui('finish-ar-test').addEventListener('click',closeAR);
 ui('sound-ar').addEventListener('click',event=>playCreatureSound(ui('ar-status'),Number(event.currentTarget.dataset.pitch)));
 window.addEventListener('keydown',event=>{
   if (event.key==='Escape' && !ui('ar-overlay').hidden) closeAR();

@@ -71,6 +71,14 @@ export function saveMarkerWork(date,id,file) {
   return withWorks('readwrite',store=>store.put(file,date+'/'+id));
 }
 
+export async function registeredMarkerWork(date,id) {
+  const file=await readSavedWork(date,id);
+  if (!file) throw new Error('이 기기에서 등록한 작품을 찾지 못했어요. 다시 등록해 주세요.');
+  const work=await loadWork(await file.arrayBuffer());
+  if (work.id!==id || work.date!==date) throw new Error('등록한 작품의 날짜와 QR 번호를 확인해 주세요.');
+  return {file,work};
+}
+
 async function fetchWork(date,id) {
   const response=await fetch(new URL('works/'+date+'/'+id+'.glb',document.baseURI),{cache:'no-cache'});
   return response.ok ? response.blob() : null;
@@ -157,10 +165,11 @@ export class MarkerAR {
     this.report(message);
   }
 
-  async open({work,id,date,publicView=false}) {
+  async open({work,id,date,publicView=false,onTestRendered}) {
     this.stop();
     this.date=date;
     this.publicView=publicView;
+    this.onTestRendered=onTestRendered;
     this.lockedId=id;
     this.id=id;
     const generation=this.generation;
@@ -199,7 +208,8 @@ export class MarkerAR {
       this.attemptedId=null;
       this.message=null;
       if (work) this.useWork(work);
-      this.status(publicView?'같은 QR이 화면에 들어오도록 비춰요.':date+' 작품을 볼 거예요. 가든 QR 표식 전체를 비춰요.');
+      this.status(onTestRendered?'등록한 QR의 네 모서리가 화면에 들어오도록 비춰요.'
+        : publicView?'같은 QR이 화면에 들어오도록 비춰요.':date+' 작품을 볼 거예요. 가든 QR 표식 전체를 비춰요.');
       this.raf=requestAnimationFrame(this.frame);
     } catch(error) {
       if (generation!==this.generation) return;
@@ -282,7 +292,7 @@ export class MarkerAR {
     const marker=code && readMarker(code.data);
     if (!marker) return;
     const {id,date}=marker;
-    if ((this.publicView || date) && date!==this.date) {
+    if ((this.publicView || this.onTestRendered || date) && date!==this.date) {
       this.setVisible(false);
       this.status(this.publicView?'웹앱을 열 때 찍었던 QR을 다시 비춰 주세요.':'선택한 수업 날짜의 QR을 비춰 주세요.');
       return;
@@ -354,6 +364,11 @@ export class MarkerAR {
         this.rule?.update(elapsed);
       }
       this.renderer.render(this.scene,this.camera);
+      if (this.onTestRendered && this.anchor.visible) {
+        const onTestRendered=this.onTestRendered;
+        this.onTestRendered=null;
+        onTestRendered();
+      }
     }
     this.raf=requestAnimationFrame(this.frame);
   }
@@ -369,6 +384,7 @@ export class MarkerAR {
 
   stop() {
     this.generation++;
+    this.onTestRendered=null;
     cancelAnimationFrame(this.raf);
     this.video.srcObject?.getTracks().forEach(track=>track.stop());
     this.video.srcObject=null;

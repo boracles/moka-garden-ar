@@ -147,6 +147,14 @@ footer a{color:inherit;text-underline-offset:3px}
 .marker-controls{display:grid;gap:8px;margin-bottom:15px}
 .marker-controls label,.marker-controls p{margin:0}
 .marker-controls p{font-size:13px;color:var(--muted)}
+.registered-marker{display:grid;gap:10px;justify-items:start;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.registered-marker strong{font-size:14px}
+.registered-marker canvas{display:block;width:144px;max-width:100%;height:auto;image-rendering:pixelated}
+.registered-marker p{margin:0;font-size:13px;color:var(--muted)}
+.registered-marker a{display:inline-flex;align-items:center;color:var(--green)}
+#save-marker-work{margin-top:12px}
+.ar-test-done{position:absolute;z-index:3;bottom:max(16px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%)}
+.ar-overlay:has(.ar-test-done:not([hidden])) .ar-abilities{bottom:calc(max(16px,env(safe-area-inset-bottom)) + 56px)}
 #marker-number{width:78px;min-height:44px;padding:6px;border:1px solid #aebeb4;border-radius:7px;color:var(--ink);font:inherit}
 #work-date,#view-date,#print-date{width:fit-content;min-height:44px;padding:6px;border:1px solid #aebeb4;border-radius:7px;color:var(--ink);background:#fff;font:inherit}
 #marker-print{width:min(calc(100% - 32px),650px);max-height:calc(100% - 32px);padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--cream);color:var(--ink)}
