@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f4f3eb">
   <link rel="icon" href="data:,">
   <title>움직이는 자화상 · 모카가든</title>
-  <script type="module" crossorigin src="./assets/index-CdF-dpU6.js"></script>
+  <script type="module" crossorigin src="./assets/index-ByAVzKd2.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-gdGdFVDA.css">
 </head>
 <body>
@@ -46,7 +46,7 @@
           <button type="button" id="undo" disabled>되돌리기</button>
           <button type="button" id="show-example" aria-pressed="false">예시 보기</button>
         </div>
-        <div class="studio-meta"><span id="stage-label">점토 구</span><span id="stage-hint">빈 곳을 드래그해 돌려 보기</span></div>
+        <div class="studio-meta"><span id="stage-label">내 점토 인형</span><span id="stage-hint">빈 곳을 드래그해 돌려 보기</span></div>
         <p id="graphics-error" class="graphics-error" hidden>이 기기에서 3D 화면을 열 수 없어요. 브라우저의 WebGL 지원을 확인해 주세요.</p>
         <div id="camera-tile" class="camera-tile" hidden>
           <video id="motion-video" autoplay muted playsinline aria-label="동작 촬영 미리 보기"></video>
@@ -67,10 +67,7 @@
             <fieldset>
               <legend>점토 붙이기</legend>
               <div class="part-grid">
-                <button type="button" data-part="head" class="secondary">＋ 머리</button>
                 <button type="button" data-part="ears" class="secondary">＋ 귀</button>
-                <button type="button" data-part="arms" class="secondary">＋ 팔</button>
-                <button type="button" data-part="legs" class="secondary">＋ 다리</button>
                 <button type="button" data-part="extension" class="secondary">＋ 움직이는 점토</button>
               </div>
             </fieldset>
@@ -89,7 +86,7 @@
         <section id="panel-move" class="panel" hidden>
           <section id="body-rig" class="auto-rigger" aria-labelledby="rig-title">
             <div class="rig-heading"><span>AUTO-RIGGER</span><h3 id="rig-title">마커 배치</h3></div>
-            <p id="rig-help">형태 빚기에서 머리, 양팔, 양다리를 먼저 붙여 주세요.</p>
+            <p id="rig-help">3D 화면을 열어야 관절 마커를 맞출 수 있어요.</p>
             <div id="rig-controls" hidden>
               <p>색이 있는 점을 캐릭터의 같은 부위로 드래그해요. 이름을 고른 뒤 화면을 탭해도 돼요.</p>
               <div id="rig-marker-list" class="rig-marker-list" aria-label="관절 마커"></div>
