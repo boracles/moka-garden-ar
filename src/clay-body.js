@@ -14,8 +14,9 @@ export function clayBodyGeometry() {
   const outline=[...side,...side.slice(1,-1).reverse().map(([x,y])=>[-x,y])];
   const curve=new THREE.CatmullRomCurve3(outline.map(([x,y])=>new THREE.Vector3(x,y,0)),true);
   const slices=outline.length*3;
-  const rings=40;
-  const centerY=1.2;
+  const rings=52;
+  // This point lies inside the visibility kernel of the rounded silhouette.
+  const centerY=1.35;
   const perimeter=Array.from({length:slices},(_,i)=>curve.getPoint(i/slices));
   const rimSegments=perimeter.map((point,i)=>new THREE.Line3(point,perimeter[(i+1)%slices]));
   const sample=new THREE.Vector3();
@@ -29,7 +30,8 @@ export function clayBodyGeometry() {
       distanceSquared=Math.min(distanceSquared,sample.distanceToSquared(nearest));
     }
     const distance=Math.sqrt(distanceSquared);
-    return Math.sqrt(distance*(2*bevel-distance));
+    const rounded=Math.sqrt(distance*(2*bevel-distance));
+    return rounded*(1-.10*Math.min(Math.abs(x),1));
   }
   const centerDepth=depthAt(0,centerY);
   const positions=[0,centerY,centerDepth];

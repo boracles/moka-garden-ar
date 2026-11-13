@@ -8,6 +8,7 @@ import {MotionCapture} from './motion.js';
 import {PartRule,partActions} from './part-rules.js';
 import {MarkerAR,classDate,exhibitionWork,markerCount,markerId,saveMarkerWork,showMarker,workLabel} from './marker-ar.js';
 import {clearClayFusion,hasClayFusion,joinClay,showClaySources} from './join-clay.js';
+import {createGrab} from './grab-clay.js';
 
 const ui=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
@@ -602,6 +603,9 @@ function selectTool(value) {
   tool=value;
   stopPreview();
   ui('brush-shape').hidden=tool!=='sculpt';
+  ui('stage-hint').textContent=tool==='grab'
+    ? '점토를 잡고 끌기 · 빈 곳을 끌어 돌리기'
+    : '빈 곳을 드래그해 돌려 보기';
   ui('brush-cursor').hidden=true;
   ui('mirror-cursor').hidden=true;
   for (const item of document.querySelectorAll('[data-tool]')) {
@@ -655,11 +659,17 @@ if (renderer) {
   const cursor=ui('brush-cursor');
   const mirrorCursor=ui('mirror-cursor');
   const symmetry=ui('brush-symmetry');
-  const radius=()=>.065+Number(ui('brush-size').value)*.021;
-  function intersect(event) {
+  const radius=()=>(
+    .065+Number(ui('brush-size').value)*.021
+  )*(tool==='grab'?1.7:1);
+  function pointRay(event) {
     const bounds=canvas.getBoundingClientRect();
     const p=new THREE.Vector2((event.clientX-bounds.left)/bounds.width*2-1,1-(event.clientY-bounds.top)/bounds.height*2);
     raycaster.setFromCamera(p,camera);
+    return raycaster.ray;
+  }
+  function intersect(event) {
+    pointRay(event);
     return raycaster.intersectObjects(avatar.surfaces,false)[0];
   }
   function brushHits(hit) {
@@ -713,10 +723,26 @@ if (renderer) {
     };
     const hits=brushHits(hit);
     positionCursors(hits);
+    if (tool==='grab') {
+      const normal=camera.getWorldDirection(new THREE.Vector3());
+      const plane=new THREE.Plane().setFromNormalAndCoplanarPoint(normal,hit.point);
+      const grab=createGrab(avatar,hits,brush.radius,brush.strength);
+      brush.grab={plane,origin:hit.point.clone(),...grab};
+      brush.changes=grab.changes;
+      canvas.classList.add('grabbing-clay');
+    }
     if (tool==='paint') makeMark(hits,1);
   },true);
   canvas.addEventListener('pointermove',event=>{
     if (step!=='make'||showingExample||transientOrbit!==null) return;
+    if (brush?.grab) {
+      if (event.pointerId!==brush.id) return;
+      if (Math.hypot(event.clientX-brush.x,event.clientY-brush.y)<2 && !brush.changes.size) return;
+      const point=pointRay(event).intersectPlane(brush.grab.plane,new THREE.Vector3());
+      if (point) brush.grab.move(point.sub(brush.grab.origin));
+      positionCursors([]);
+      return;
+    }
     const hits=brushHits(intersect(event));
     positionCursors(hits);
     if (event.pointerId!==brush?.id) return;
@@ -733,6 +759,12 @@ if (renderer) {
       orbit.enabled=showingExample||step!=='make';
     }
     if (event.pointerId!==brush?.id) return;
+    if (event.type==='pointerup' && brush.grab && brush.changes.size) {
+      const point=pointRay(event).intersectPlane(brush.grab.plane,new THREE.Vector3());
+      if (point) brush.grab.move(point.sub(brush.grab.origin));
+    }
+    brush.grab?.finish();
+    canvas.classList.remove('grabbing-clay');
     const changed=brush.changes.size>0;
     if (changed) {
       rememberEdit({attribute:brush.attribute,changes:brush.changes});
