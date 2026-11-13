@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#f4f3eb">
   <link rel="icon" href="data:,">
   <title>움직이는 자화상 · 모카가든</title>
-  <script type="module" crossorigin src="./assets/index-W-OuOEVn.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-B5Nu0Enn.css">
+  <script type="module" crossorigin src="./assets/index-CdF-dpU6.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-gdGdFVDA.css">
 </head>
 <body>
   <header class="masthead">
@@ -41,6 +41,7 @@
       <section class="studio" aria-label="캐릭터 미리 보기">
         <div id="viewport" class="viewport" aria-label="편집할 3D 캐릭터"></div>
         <div id="brush-cursor" class="brush-cursor" hidden></div>
+        <div id="mirror-cursor" class="brush-cursor mirror-cursor" hidden></div>
         <div class="stage-toolbar" id="stage-toolbar">
           <button type="button" id="undo" disabled>되돌리기</button>
           <button type="button" id="show-example" aria-pressed="false">예시 보기</button>
@@ -60,6 +61,7 @@
               <legend>붓</legend>
               <div class="brush-control"><label for="brush-size">크기</label><input id="brush-size" type="range" min="1" max="10" value="5"></div>
               <div class="brush-control"><label for="brush-strength">세기</label><input id="brush-strength" type="range" min="1" max="10" value="6"></div>
+              <label class="brush-symmetry"><input type="checkbox" id="brush-symmetry" checked> 좌우 대칭</label>
             </fieldset>
             <fieldset><legend>색</legend><div id="colors" class="colors" aria-label="칠할 색"></div></fieldset>
             <fieldset>
