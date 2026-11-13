@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#f4f3eb">
   <link rel="icon" href="data:,">
   <title>움직이는 자화상 · 모카가든</title>
-  <script type="module" crossorigin src="./assets/index-DtSpS2FT.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-B5srmdUx.css">
+  <script type="module" crossorigin src="./assets/index-W-OuOEVn.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-B5Nu0Enn.css">
 </head>
 <body>
   <header class="masthead">
@@ -18,7 +18,10 @@
       <button type="button" data-step="ability"><span>3</span> 기능 붙이기</button>
       <button type="button" data-step="place"><span>4</span> 정원에 놓기</button>
     </nav>
-    <button type="button" id="view-garden" class="secondary">가든 작품 보기</button>
+    <div class="garden-tools">
+      <button type="button" id="view-garden" class="secondary">지난 작품 보기</button>
+      <a href="?qr=1" id="open-marker-print">교사용 QR 10장</a>
+    </div>
   </header>
 
   <main>
@@ -186,17 +189,15 @@
 
         <section id="panel-place" class="panel" hidden>
           <h2>생명체가 살 자리</h2>
-          <p>작품에 자리 번호를 정해요. 같은 번호의 QR 표식을 정원에 놓고 비추면 캐릭터가 나타나요.</p>
+          <p>선생님에게 받은 QR 번호를 입력해요. 같은 번호의 QR을 비추면 내 캐릭터가 나타나요.</p>
           <div class="marker-controls">
-            <label for="marker-number">가든 표식 번호</label>
-            <input type="number" id="marker-number" min="1" max="99" step="1" value="1" inputmode="numeric">
-            <div id="marker-sheet" class="marker-sheet">
-              <canvas id="marker-qr" width="420" height="420" aria-label="가든 QR 표식"></canvas>
-              <strong id="marker-label"></strong>
-            </div>
+            <label for="work-date">수업 날짜</label>
+            <input type="date" id="work-date" required>
+            <label for="marker-number">내 QR 번호</label>
+            <input type="text" id="marker-number" inputmode="numeric" maxlength="2" placeholder="예: 07" aria-describedby="marker-number-help" autocomplete="off">
+            <p id="marker-number-help" aria-live="polite">01번부터 10번까지 입력할 수 있어요.</p>
             <div class="control-actions">
-              <button type="button" id="print-marker" class="secondary">QR 표식 인쇄</button>
-              <button type="button" id="save-marker-work" class="secondary">표식에 연결해 작품 저장 (.glb)</button>
+              <button type="button" id="save-marker-work" class="secondary" disabled>QR 번호에 작품 저장 (.glb)</button>
             </div>
           </div>
           <label for="place-note">고른 자리와 그 이유</label>
@@ -209,6 +210,44 @@
   </main>
 
   <footer><span>모카가든 워크숍 프로토타입</span></footer>
+
+  <section id="public-viewer" class="public-viewer" hidden>
+    <p class="kicker">모카가든 워크숍</p>
+    <h1 id="public-viewer-title">가든 작품 보기</h1>
+    <p id="public-viewer-status" role="status"></p>
+    <button type="button" id="public-start" class="primary" hidden>카메라 켜고 작품 보기</button>
+  </section>
+
+  <dialog id="marker-print" aria-labelledby="marker-print-title">
+    <div class="marker-print-header">
+      <div>
+        <h2 id="marker-print-title">모카가든 QR 01–10</h2>
+        <p>미리 인쇄해 한 장씩 나눠 주세요. 학생은 ‘정원에 놓기’에서 받은 번호를 입력해요.</p>
+        <label for="print-date">QR을 만들 수업 날짜</label>
+        <input type="date" id="print-date" required>
+      </div>
+      <div class="marker-print-actions">
+        <button type="button" id="print-markers" class="primary" disabled>QR 10장 인쇄</button>
+        <button type="button" id="close-marker-print" class="secondary">닫기</button>
+      </div>
+      <p id="marker-print-status" role="status" hidden></p>
+    </div>
+    <p id="marker-print-date"></p>
+    <div id="marker-print-grid" class="marker-print-grid"></div>
+  </dialog>
+
+  <dialog id="garden-date" aria-labelledby="garden-date-title">
+    <form id="garden-date-form">
+      <h2 id="garden-date-title">어느 날의 작품을 볼까요?</h2>
+      <label for="view-date">수업 날짜</label>
+      <input type="date" id="view-date" required>
+      <p>날짜를 고르고 가든의 QR을 비춰요.</p>
+      <div class="marker-print-actions">
+        <button type="submit" class="primary">QR 비추기</button>
+        <button type="button" id="close-garden-date" class="secondary">닫기</button>
+      </div>
+    </form>
+  </dialog>
 
   <section id="ar-overlay" class="ar-overlay" aria-label="정원에서 AR 배치" hidden>
     <video id="ar-video" autoplay muted playsinline aria-label="가든 표식 카메라"></video>
