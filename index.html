@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#f4f3eb">
   <link rel="icon" href="data:,">
   <title>저마다의 완벽함</title>
-  <script type="module" crossorigin src="./assets/index-moka-fan-ears.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-pjRUm7ET.css">
+  <script type="module" crossorigin src="./assets/index-B_sRkKiK.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-edqwxsOL.css">
 </head>
 <body>
   <header class="masthead">
@@ -199,21 +199,25 @@
 
         <section id="panel-place" class="panel" hidden>
           <h2>‘또 다른 나’를 놓을 자리</h2>
-          <p>선생님에게 받은 QR 번호를 입력해요. 같은 번호의 QR을 비추면 내 캐릭터가 나타나요.</p>
+          <p>선생님에게 받은 QR 번호로 작품을 등록하고, 카메라로 QR을 비춰 내 작품이 나타나는지 확인해요.</p>
           <div class="marker-controls">
             <label for="work-date">수업 날짜</label>
             <input type="date" id="work-date" required>
             <label for="marker-number">내 QR 번호</label>
             <input type="text" id="marker-number" inputmode="numeric" maxlength="2" placeholder="예: 07" aria-describedby="marker-number-help" autocomplete="off">
             <p id="marker-number-help" aria-live="polite">01번부터 10번까지 입력할 수 있어요.</p>
-            <div class="control-actions">
-              <button type="button" id="save-marker-work" class="secondary" disabled>QR 번호에 작품 저장 (.glb)</button>
-            </div>
           </div>
           <label for="place-note">고른 자리와 그 이유</label>
           <textarea id="place-note" rows="3" maxlength="180" placeholder="이 자리를 고른 이유를 적어요."></textarea>
+          <button type="button" id="save-marker-work" class="primary bottom-action" disabled>작품 등록하기</button>
           <p id="place-status" class="status" aria-live="polite"></p>
-          <button type="button" id="start-ar" class="primary bottom-action">뒤 카메라로 QR 비추기</button>
+          <section id="registered-marker" class="registered-marker" aria-label="등록한 작품 QR" hidden>
+            <strong id="registered-marker-label"></strong>
+            <div id="registered-marker-image"></div>
+            <p>수업용 iPad에서 테스트하려면 같은 번호의 인쇄한 QR이나 다른 기기에 띄운 QR을 비춰요.</p>
+            <button type="button" id="start-ar" class="primary bottom-action" disabled>QR 테스트하기</button>
+            <a id="download-marker-work" class="text-button">작품 파일 내려받기 (.glb)</a>
+          </section>
         </section>
       </aside>
     </div>
@@ -263,6 +267,7 @@
     <video id="ar-video" autoplay muted playsinline aria-label="가든 표식 카메라"></video>
     <canvas id="ar-canvas" aria-label="표식에 나타난 캐릭터"></canvas>
     <div class="ar-top"><button type="button" id="close-ar">편집으로 돌아가기</button><p id="ar-status" aria-live="polite"></p></div>
+    <button type="button" id="finish-ar-test" class="ar-test-done" hidden>테스트 완료 · 돌아가기</button>
     <div class="ar-abilities" id="ar-abilities" hidden>
       <button type="button" id="sound-ar">소리 내기</button>
     </div>
