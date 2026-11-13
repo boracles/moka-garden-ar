@@ -24,12 +24,9 @@ export const palette = [
 ];
 
 const ceramic = new THREE.MeshStandardMaterial({vertexColors:true,roughness:.48});
-const brass = new THREE.MeshStandardMaterial({vertexColors:true,roughness:.34,metalness:.28});
 const neighbors = new WeakMap();
 
 const stone = '#e4ded1';
-const slate = '#365052';
-const gold = '#bc873e';
 const earSpread=.68;
 const extensionJoints=['ClayBase','ClayMiddle','ClayTip'];
 const bendAngles=[.10,.66,.92];
@@ -159,15 +156,6 @@ export function createAvatar({example=false}={}) {
     return mesh;
   }
 
-  function ornament(parent,geometry,position,color,material=ceramic) {
-    tint(geometry,color);
-    const mesh=new THREE.Mesh(geometry,material);
-    mesh.position.set(...position);
-    mesh.castShadow=true;
-    parent.add(mesh);
-    return mesh;
-  }
-
   const pelvis=joint(model,'Pelvis',0,.88,0);
   const spine=joint(pelvis,'Spine',0,.23,0);
   const head=joint(spine,'Head',0,.57,0);
@@ -240,7 +228,7 @@ export function createAvatar({example=false}={}) {
   model.updateMatrixWorld(true);
 
   // The brush edits the same vertices that the upper and lower joint animate.
-  function limb(name,upper,lower,isLeg,color=stone) {
+  function limb(name,upper,lower,isLeg,color) {
     const geometry=volume(isLeg?.136:.132,isLeg?.425:.398,isLeg?.134:.124);
     geometry.translate(0,isLeg?-.291:-.294,0);
     fitLimbSkin(geometry,-lower.position.y);
@@ -334,45 +322,30 @@ export function createAvatar({example=false}={}) {
     bodyMesh=bindClayBody(geometry,ceramic,model,joints,segments);
     surfaces.push(bodyMesh);
   } else {
-    const body=volume(.385,.615,.302);
-    const v=body.getAttribute('position');
-    for(let i=0;i<v.count;i++){
-      const height=(v.getY(i)+.615)/1.23;
-      v.setX(i,v.getX(i)*(1.16-height*.40)+.13*(height-.5)**2);
-      v.setZ(i,v.getZ(i)+.105*(height-.46));
-    }
-    body.computeVertexNormals();
-    sculptable(spine,'Tapered porcelain body',body,[-.02,.014,0]);
+    const mint='#6ad0ba';
+    const apricot='#ef9848';
+    const blueberry='#456ac8';
+    const dark='#234643';
+    const belly=volume(.222,.262,.075);
+    sculptable(spine,'Mint clay body',volume(.365,.465,.263),[0,.035,0],mint);
+    sculptable(spine,'Cream belly patch',belly,[0,.012,.213],'#fff3db');
     for (const side of ['L','R']) {
-      limb('Porcelain arm '+side,joints['UpperArm'+side],joints['Forearm'+side],false);
-      limb('Porcelain leg '+side,joints['Thigh'+side],joints['Shin'+side],true);
-      sculptable(joints['Shin'+side],'Porcelain foot '+side,volume(.142,.083,.194),[0,-.306,.055],side==='L'?slate:stone);
+      const sign=side==='L'?1:-1;
+      const ear=ears[side==='L'?0:1];
+      sculptable(ear,ear.name+' clay',fanEarGeometry(sign),[0,0,0],apricot);
+      limb('Clay arm '+side,joints['UpperArm'+side],joints['Forearm'+side],false,mint);
+      limb('Clay leg '+side,joints['Thigh'+side],joints['Shin'+side],true,mint);
+      sculptable(extremities.hands[side==='L'?0:1],'Blue mitten '+side,volume(.137,.145,.108),[0,.068,.009],blueberry);
+      sculptable(extremities.feet[side==='L'?0:1],'Blue shoe '+side,volume(.145,.098,.176),[0,0,.028],blueberry);
+      sculptable(head,'Eye '+side,volume(.025,.033,.018),[sign*.098,.277,.245],dark);
+      sculptable(head,'Rosy cheek '+side,volume(.043,.024,.014),[sign*.153,.203,.217],'#f58a7b');
     }
-
-    sculptable(head,'Long head',volume(.259,.492,.292),[.008,.235,.037]).rotation.z=-.26;
-    sculptable(head,'Projecting face',volume(.176,.102,.189),[-.072,.083,.252]).rotation.z=.18;
-    const arc=new THREE.CatmullRomCurve3([
-      new THREE.Vector3(.128,.43,-.039),new THREE.Vector3(.249,.56,-.04),
-      new THREE.Vector3(.337,.725,-.053),new THREE.Vector3(.265,.857,-.042),
-      new THREE.Vector3(.135,.825,-.02),new THREE.Vector3(.123,.729,.023),
+    sculptable(head,'Rounded mint head',volume(.281,.302,.254),[0,.23,0],mint);
+    sculptable(head,'Clay nose',volume(.042,.032,.030),[0,.222,.258],apricot);
+    const smile=new THREE.CatmullRomCurve3([
+      new THREE.Vector3(-.054,.164,.242),new THREE.Vector3(0,.143,.246),new THREE.Vector3(.054,.164,.242),
     ]);
-    ornament(head,new THREE.TubeGeometry(arc,42,.064,16,false),[0,0,0],slate);
-    ornament(head,volume(.091,.091,.091),[.122,.725,.024],gold,brass);
-    for (const [x,y,z,rotation] of [[-.116,.286,.296,.1],[.07,.31,.323,-.03]]) {
-      const eye=ornament(head,volume(.029,.009,.013),[x,y,z],'#343733');
-      eye.rotation.z=rotation;
-    }
-    const bodyInset=ornament(spine,volume(.050,.139,.027),[-.149,-.084,.282],gold,brass);
-    bodyInset.rotation.z=-.19;
-    for (let i=0;i<3;i++) {
-      const offset=i*.033;
-      const groove=new THREE.CatmullRomCurve3([
-        new THREE.Vector3(.116+offset,-.278,.263-offset*.72),
-        new THREE.Vector3(.132+offset,-.343,.241-offset*.68),
-        new THREE.Vector3(.123+offset,-.405,.208-offset*.65),
-      ]);
-      ornament(spine,new THREE.TubeGeometry(groove,15,.006,7,false),[0,0,0],'#a39c89');
-    }
+    sculptable(head,'Clay smile',new THREE.TubeGeometry(smile,20,.009,8,false),[0,0,0],dark);
   }
 
   const rest=Object.fromEntries(Object.entries(joints).map(([name,bone])=>[name,bone.quaternion.clone()]));
@@ -557,3 +530,20 @@ export function rigPreview(avatar) {
   ]);
 }
 
+
+export function exampleDance(avatar) {
+  const times=[0,.62,1.28,2.20,3];
+  const offsets={"Head":[[0,0,0],[0.04,0.13,-0.18],[0,-0.12,0.11],[0,0,-0.11],[0,0,0]],"Spine":[[0,0,0],[0,0,-0.1],[0,0,0.15],[0,0,-0.14],[0,0,0]],"UpperArmL":[[0,0,0],[0,0,1.11],[0,0,0.67],[0,0,1.39],[0,0,0]],"ForearmL":[[0,0,0],[-0.48,0,1.46],[-0.21,0,0.44],[0,0,0.18],[0,0,0]],"UpperArmR":[[0,0,0],[0,0,-1.11],[0,0,-0.42],[0,0,-1.3],[0,0,0]],"ForearmR":[[0,0,0],[-0.48,0,-1.46],[-0.32,0,-0.66],[0,0,-0.22],[0,0,0]],"ThighL":[[0,0,0],[0,0,0.04],[-0.21,0,0.39],[0,0,0.23],[0,0,0]],"ShinL":[[0,0,0],[0.04,0,0],[0.38,0,0],[0.13,0,0],[0,0,0]],"ThighR":[[0,0,0],[0,0,-0.03],[0,0,-0.16],[-0.16,0,-0.26],[0,0,0]],"ShinR":[[0,0,0],[0.04,0,0],[0.1,0,0],[0.29,0,0],[0,0,0]]};
+  const euler=new THREE.Euler();
+  const offset=new THREE.Quaternion();
+  const tracks=Object.entries(offsets).map(([name,poses])=>{
+    const values=poses.flatMap(angles=>avatar.rest[name].clone()
+      .multiply(offset.setFromEuler(euler.set(...angles))).toArray());
+    return new THREE.QuaternionKeyframeTrack(name+'.quaternion',times,values);
+  });
+  const start=avatar.joints.Pelvis.position;
+  const steps=[[0,0],[0,-.035],[.21,.018],[.12,-.045],[0,0]];
+  tracks.push(new THREE.VectorKeyframeTrack('Pelvis.position',times,
+    steps.flatMap(([x,y])=>[start.x+x,start.y+y,start.z])));
+  return new THREE.AnimationClip('Listening dance',3,tracks);
+}
