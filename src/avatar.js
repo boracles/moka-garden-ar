@@ -285,7 +285,8 @@ export function createAvatar({example=false}={}) {
     const created=[];
     if (kind==='ears') {
       for (const [index,ear] of ears.entries()) {
-        created.push(sculptable(ear,ear.name+' clay',fanEarGeometry(index===0?1:-1),[0,0,0]));
+        const side=index===0?1:-1;
+        created.push(sculptable(ear,ear.name+' clay',fanEarGeometry(side),[0,0,0]));
       }
     } else if (bendableParts.includes(kind)) {
       created.push(movingClay(kind));
