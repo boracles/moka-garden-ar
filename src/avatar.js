@@ -82,6 +82,34 @@ function volume(x,y,z) {
   return new THREE.SphereGeometry(1,48,40).scale(x,y,z);
 }
 
+function fanEarGeometry(side) {
+  const geometry=volume(1,1,1);
+  const positions=geometry.getAttribute('position');
+  for (let index=0;index<positions.count;index++) {
+    const x=positions.getX(index);
+    const y=positions.getY(index);
+    const z=positions.getZ(index);
+    const progress=(y+1)*.5;
+    const across=x*(.078+.31*progress);
+    const angle=Math.atan2(across,.085+.48*progress);
+    const fold=Math.cos(angle*24);
+    const rim=.024*progress*progress*fold;
+    const depth=z*(.073+.014*progress)+.031*progress*progress+.027*z*z*progress*fold;
+    positions.setXYZ(index,side*across,.48*progress-.07+rim,depth);
+  }
+  if (side<0) {
+    const indices=geometry.index.array;
+    for (let i=0;i<indices.length;i+=3) {
+      [indices[i+1],indices[i+2]]=[indices[i+2],indices[i+1]];
+    }
+  }
+  geometry.rotateZ(-side*.76);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 function writeSkin(geometry,weightsForHeight) {
   const position=geometry.getAttribute('position');
   const weights=new Float32Array(position.count*4);
@@ -184,8 +212,8 @@ export function createAvatar({example=false}={}) {
     extension.rotation.set(tilt[place]??0,0,place==='side'?-1.05:0);
   }
   positionExtension();
-  ears[0].position.set(.235,.26,.05);
-  ears[1].position.set(-.235,.26,.05);
+  ears[0].position.set(.205,.235,.05);
+  ears[1].position.set(-.205,.235,.05);
   const ankles={};
   const wrists={};
   const extremities={hands:[],feet:[]};
@@ -256,8 +284,9 @@ export function createAvatar({example=false}={}) {
     if (example || parts.has(kind)) return false;
     const created=[];
     if (kind==='ears') {
-      for (const ear of ears) {
-        created.push(sculptable(ear,ear.name+' clay',volume(.115,.205,.073),[0,.135,0]));
+      for (const [index,ear] of ears.entries()) {
+        const side=index===0?1:-1;
+        created.push(sculptable(ear,ear.name+' clay',fanEarGeometry(side),[0,0,0]));
       }
     } else if (bendableParts.includes(kind)) {
       created.push(movingClay(kind));
