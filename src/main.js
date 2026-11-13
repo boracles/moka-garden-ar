@@ -671,9 +671,11 @@ if (renderer) {
   const cursor=ui('brush-cursor');
   const mirrorCursor=ui('mirror-cursor');
   const symmetry=ui('brush-symmetry');
-  const radius=()=>(
-    .065+Number(ui('brush-size').value)*.021
-  )*(tool==='grab'?1.7:1);
+  function radius() {
+    const size=Number(ui('brush-size').value);
+    if (tool==='paint') return .045+(size-1)*.0255;
+    return (.065+size*.021)*(tool==='grab'?1.7:1);
+  }
   function pointRay(event) {
     const bounds=canvas.getBoundingClientRect();
     const p=new THREE.Vector2((event.clientX-bounds.left)/bounds.width*2-1,1-(event.clientY-bounds.top)/bounds.height*2);
@@ -759,7 +761,7 @@ if (renderer) {
     positionCursors(hits);
     if (event.pointerId!==brush?.id) return;
     const distance=Math.hypot(event.clientX-brush.x,event.clientY-brush.y);
-    if (distance<4) return;
+    if (distance<(brush.tool==='paint'?2:4)) return;
     brush.x=event.clientX;
     brush.y=event.clientY;
     if (!hits.length) return;

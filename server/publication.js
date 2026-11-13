@@ -33,7 +33,7 @@ export default {
       return new Response(null,{status:404});
     }
     const origin=request.headers.get('Origin');
-    const allowed=origin===env.FRONTEND_ORIGIN;
+    const allowed=env.FRONTEND_ORIGINS.includes(origin);
     const headers={
       'Cache-Control':'no-store',
       'Vary':'Origin',
