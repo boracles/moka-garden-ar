@@ -1,0 +1,331 @@
+import * as THREE from 'three';
+import jsQR from 'jsqr';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {PartRule,partActions} from './part-rules.js';
+
+const markerPattern=/^moka-garden-(?:0[1-9]|[1-9]\d)$/;
+const scannedCorners=['topLeftCorner','topRightCorner','bottomRightCorner','bottomLeftCorner'];
+const square=[[-.5,.5],[.5,.5],[.5,-.5],[-.5,-.5]];
+const verticalFov=54;
+const storageName='moka-garden-works';
+
+export function markerId(value) {
+  const n=Number(value);
+  return Number.isInteger(n) && n>=1 && n<=99 ? 'moka-garden-'+String(n).padStart(2,'0') : null;
+}
+
+export async function showMarker(canvas,id) {
+  const {default:qr}=await import('qrcode');
+  await qr.toCanvas(canvas,id,{width:420,margin:4,errorCorrectionLevel:'M'});
+}
+
+function readSavedWork(id) {
+  return withWorks('readonly',store=>store.get(id));
+}
+
+function withWorks(mode,request) {
+  return new Promise((resolve,reject)=>{
+    const open=indexedDB.open(storageName,1);
+    open.onupgradeneeded=()=>open.result.createObjectStore('markers');
+    open.onerror=()=>reject(open.error);
+    open.onsuccess=()=>{
+      const db=open.result;
+      const tx=db.transaction('markers',mode);
+      const result=request(tx.objectStore('markers'));
+      tx.oncomplete=()=>{db.close();resolve(result.result);};
+      tx.onabort=()=>{db.close();reject(tx.error);};
+    };
+  });
+}
+
+export function saveMarkerWork(id,file) {
+  return withWorks('readwrite',store=>store.put(file,id));
+}
+
+export function markerPose(location,width,height) {
+  const focal=height/(2*Math.tan(THREE.MathUtils.degToRad(verticalFov/2)));
+  const rows=[];
+  for (const [index,name] of scannedCorners.entries()) {
+    const [x,y]=square[index];
+    const point=location[name];
+    const u=(point.x-width/2)/focal;
+    const v=(height/2-point.y)/focal;
+    rows.push([x,y,1,0,0,0,-u*x,-u*y,u],[0,0,0,x,y,1,-v*x,-v*y,v]);
+  }
+  for (let column=0;column<8;column++) {
+    let pivot=column;
+    for (let i=column+1;i<8;i++) {
+      if (Math.abs(rows[i][column])>Math.abs(rows[pivot][column])) pivot=i;
+    }
+    if (Math.abs(rows[pivot][column])<1e-7) return null;
+    [rows[column],rows[pivot]]=[rows[pivot],rows[column]];
+    const row=rows[column];
+    const divisor=row[column];
+    for (let i=column;i<=8;i++) row[i]/=divisor;
+    for (let j=0;j<8;j++) {
+      if (j===column) continue;
+      const weight=rows[j][column];
+      for (let i=column;i<=8;i++) rows[j][i]-=weight*row[i];
+    }
+  }
+  const h=rows.map(row=>row[8]);
+  const right=new THREE.Vector3(h[0],h[3],-h[6]);
+  const markerUp=new THREE.Vector3(h[1],h[4],-h[7]);
+  const scale=2/(right.length()+markerUp.length());
+  if (!Number.isFinite(scale)||scale<.2||scale>50) return null;
+  right.normalize();
+  const up=right.clone().cross(markerUp).normalize();
+  const forward=right.clone().cross(up).normalize();
+  const position=new THREE.Vector3(h[2],h[5],-1).multiplyScalar(scale);
+  const rotation=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(right,up,forward));
+  return {position,rotation};
+}
+
+function loadWork(buffer) {
+  return new GLTFLoader().parseAsync(buffer,'').then(gltf=>{
+    const model=gltf.scene.children.find(node=>markerPattern.test(node.userData.gardenMarker??''));
+    if (!model) throw new Error('이 파일에는 모카가든 표식 번호가 없어요.');
+    const settings=model.userData.gardenWork??{};
+    const {rule}=settings;
+    const allowed=rule && partActions[rule.part]?.some(([action])=>action===rule.action);
+    if (!allowed || !['tap','place'].includes(rule.trigger) ||
+      (rule.action==='recorded' && !gltf.animations.some(clip=>clip.name===rule.animation))) delete settings.rule;
+    return {id:model.userData.gardenMarker,model,animations:gltf.animations,settings};
+  });
+}
+
+export class MarkerAR {
+  constructor(video,canvas,status,onVisibility) {
+    this.video=video;
+    this.canvas=canvas;
+    this.report=status;
+    this.onVisibility=onVisibility;
+    this.generation=0;
+    this.frame=this.frame.bind(this);
+    canvas.addEventListener('pointerup',event=>this.touch(event));
+  }
+
+  status(message) {
+    if (message===this.message) return;
+    this.message=message;
+    this.report(message);
+  }
+
+  async open({work,id}) {
+    this.stop();
+    this.lockedId=id;
+    this.id=id;
+    const generation=this.generation;
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('카메라를 사용할 수 있는 HTTPS 주소에서 열어 주세요.');
+    let stream;
+    try {
+      stream=await navigator.mediaDevices.getUserMedia({
+        audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},
+      });
+      if (generation!==this.generation) {
+        stream.getTracks().forEach(track=>track.stop());
+        return;
+      }
+      this.video.srcObject=stream;
+      await this.video.play();
+      if (generation!==this.generation) return;
+
+      this.renderer??=new THREE.WebGLRenderer({canvas:this.canvas,alpha:true,antialias:true});
+      this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+      this.scene=new THREE.Scene();
+      this.scene.add(new THREE.HemisphereLight(0xffffff,0xb0c5ad,2.4));
+      const light=new THREE.DirectionalLight(0xffedd8,2.1);
+      light.position.set(-4,6,4);
+      this.scene.add(light);
+      this.camera=new THREE.PerspectiveCamera(verticalFov,1,.02,75);
+      this.anchor=new THREE.Group();
+      this.anchor.visible=false;
+      this.scene.add(this.anchor);
+      this.scan=document.createElement('canvas');
+      this.context=this.scan.getContext('2d',{willReadFrequently:true});
+      this.lastScan=-Infinity;
+      this.lastSeen=-Infinity;
+      this.lastFrame=null;
+      this.lastVideoTime=-1;
+      this.detectedId=null;
+      this.attemptedId=null;
+      this.message=null;
+      if (work) this.useWork(work);
+      this.status('가든 QR 표식 전체가 화면에 들어오도록 비춰요.');
+      this.raf=requestAnimationFrame(this.frame);
+    } catch(error) {
+      if (generation!==this.generation) return;
+      this.stop();
+      if (error.name==='NotAllowedError') throw new Error('브라우저에서 카메라 권한을 허용해 주세요.');
+      if (!stream) throw new Error('뒤 카메라를 열 수 없어요. 카메라 상태를 확인해 주세요.');
+      throw error;
+    }
+  }
+
+  useWork({model,animations,settings}) {
+    this.setVisible(false);
+    this.anchor.clear();
+    this.body?.stopAllAction();
+    this.rule?.stop();
+    model.updateMatrixWorld(true);
+    const bounds=new THREE.Box3().setFromObject(model);
+    const size=1.65/Math.max(bounds.max.y-bounds.min.y,.01);
+    const center=bounds.getCenter(new THREE.Vector3());
+    model.scale.multiplyScalar(size);
+    model.position.set(-center.x*size,-bounds.min.y*size,-center.z*size);
+    this.anchor.add(model);
+    this.settings=settings;
+    const movement=animations.find(clip=>clip.name===settings.motion);
+    this.body=movement?new THREE.AnimationMixer(model):null;
+    this.bodyAction=movement?this.body.clipAction(movement).setEffectiveTimeScale(settings.speed??1):null;
+    const rule=settings.rule;
+    this.rule=rule?new PartRule(model,{...rule,clip:animations.find(clip=>clip.name===rule.animation)}):null;
+  }
+
+  async loadFile(file,remember=true) {
+    const generation=this.generation;
+    const work=await loadWork(await file.arrayBuffer());
+    if (generation!==this.generation || !this.anchor) return;
+    if (this.detectedId && work.id!==this.detectedId) {
+      throw new Error('이 작품은 '+work.id.slice(-2)+'번 표식에 연결돼 있어요.');
+    }
+    this.id=work.id;
+    this.useWork(work);
+    this.onFileNeeded?.(null);
+    this.status('작품을 열었어요. '+work.id.slice(-2)+'번 표식을 비춰요.');
+    if (remember) await saveMarkerWork(work.id,file).catch(()=>{});
+  }
+
+  setVisible(visible) {
+    if (!this.anchor || this.anchor.visible===visible) return;
+    this.anchor.visible=visible;
+    if (visible) {
+      this.bodyAction?.reset().play();
+      if (this.settings.rule?.trigger==='place') this.rule?.trigger();
+    } else {
+      this.rule?.stop();
+    }
+    this.onVisibility?.(visible,this.settings);
+  }
+
+  async findWork(id,generation) {
+    try {
+      let file=await readSavedWork(id).catch(()=>null);
+      if (!file) {
+        const url=new URL('works/'+id+'.glb',document.baseURI);
+        const response=await fetch(url);
+        if (response.ok) file=await response.blob();
+      }
+      if (file && generation===this.generation && !this.id && this.detectedId===id) await this.loadFile(file,false);
+    } catch {
+      // The file picker remains available when a shared work cannot be opened.
+    }
+  }
+
+  scanMarker(now) {
+    const {video,scan,context}=this;
+    const width=Math.min(video.videoWidth,640);
+    const height=Math.round(video.videoHeight*width/video.videoWidth);
+    if (scan.width!==width || scan.height!==height) {
+      scan.width=width;
+      scan.height=height;
+    }
+    context.drawImage(video,0,0,width,height);
+    const code=jsQR(context.getImageData(0,0,width,height).data,width,height,{inversionAttempts:'dontInvert'});
+    if (!code || !markerPattern.test(code.data)) return;
+    this.detectedId=code.data;
+    if (!this.lockedId && this.id && code.data!==this.id) {
+      this.setVisible(false);
+      this.id=null;
+    }
+    if (!this.id) {
+      if (this.attemptedId===code.data) return;
+      this.attemptedId=code.data;
+      this.onFileNeeded?.(code.data);
+      this.status(code.data.slice(-2)+'번 표식이에요. 연결된 작품 파일을 열어 주세요.');
+      const generation=this.generation;
+      this.findWork(code.data,generation);
+      return;
+    }
+    if (code.data!==this.id) {
+      this.setVisible(false);
+      this.status('이 작품은 '+this.id.slice(-2)+'번 표식에 연결돼 있어요.');
+      return;
+    }
+    const pose=markerPose(code.location,width,height);
+    if (!pose) return;
+    this.lastSeen=now;
+    const amount=this.anchor.visible ? .42 : 1;
+    this.anchor.position.lerp(pose.position,amount);
+    this.anchor.quaternion.slerp(pose.rotation,amount);
+    this.setVisible(true);
+    this.status(this.settings.rule?.trigger==='tap'
+      ? '캐릭터를 터치해 만든 반응을 시험해요.'
+      : '표식 위에 내 생명체가 나타났어요.');
+  }
+
+  frame(now) {
+    const elapsed=this.lastFrame===null?0:Math.min((now-this.lastFrame)/1000,.08);
+    this.lastFrame=now;
+    const {video}=this;
+    if (video.readyState>=2 && video.videoWidth) {
+      const width=this.canvas.clientWidth;
+      const height=this.canvas.clientHeight;
+      const videoRatio=video.videoWidth/video.videoHeight;
+      const scale=Math.max(width/video.videoWidth,height/video.videoHeight);
+      const imageWidth=Math.round(video.videoWidth*scale);
+      const imageHeight=Math.round(video.videoHeight*scale);
+      if (width>0 && height>0 && (this.width!==width || this.height!==height || this.videoRatio!==videoRatio)) {
+        this.width=width;
+        this.height=height;
+        this.videoRatio=videoRatio;
+        this.camera.aspect=videoRatio;
+        this.camera.setViewOffset(imageWidth,imageHeight,(imageWidth-width)/2,(imageHeight-height)/2,width,height);
+        this.renderer.setSize(width,height,false);
+      }
+      if (video.currentTime!==this.lastVideoTime && now-this.lastScan>95) {
+        this.lastScan=now;
+        this.lastVideoTime=video.currentTime;
+        this.scanMarker(now);
+      }
+      if (this.anchor.visible && now-this.lastSeen>420) {
+        this.setVisible(false);
+        this.status(this.id.slice(-2)+'번 표식을 다시 비춰요.');
+      }
+      this.rule?.clearPose();
+      if (this.anchor.visible) {
+        this.body?.update(elapsed);
+        this.rule?.update(elapsed);
+      }
+      this.renderer.render(this.scene,this.camera);
+    }
+    this.raf=requestAnimationFrame(this.frame);
+  }
+
+  touch(event) {
+    if (!this.anchor?.visible || this.settings.rule?.trigger!=='tap') return;
+    const rect=this.canvas.getBoundingClientRect();
+    const point=new THREE.Vector2(2*(event.clientX-rect.left)/rect.width-1,1-2*(event.clientY-rect.top)/rect.height);
+    const ray=new THREE.Raycaster();
+    ray.setFromCamera(point,this.camera);
+    if (ray.intersectObject(this.anchor,true).length) this.rule.trigger();
+  }
+
+  stop() {
+    this.generation++;
+    cancelAnimationFrame(this.raf);
+    this.video.srcObject?.getTracks().forEach(track=>track.stop());
+    this.video.srcObject=null;
+    this.body?.stopAllAction();
+    this.rule?.stop();
+    this.anchor=null;
+    this.body=null;
+    this.rule=null;
+    this.scene=null;
+    this.settings=null;
+    this.id=null;
+    this.width=null;
+    this.onVisibility?.(false);
+    this.onFileNeeded?.(null);
+  }
+}

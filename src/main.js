@@ -5,7 +5,8 @@ import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
 import {applyBrush,createAvatar,extensionClip,palette,partReaction,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
 import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
-import {GardenAR,warmUpAR} from './garden-ar.js';
+import {PartRule,partActions} from './part-rules.js';
+import {MarkerAR,markerId,saveMarkerWork,showMarker} from './marker-ar.js';
 
 const ui=id=>document.getElementById(id);
 const intro = {
@@ -88,8 +89,7 @@ let clayClip=null;
 let clayRecording=null;
 let mixer=null;
 let playingClay=false;
-let previewReaction=null;
-let reactionAmount=0;
+let previewRule=null;
 let audioContext;
 let cameraRequest=0;
 let openingCamera=false;
@@ -121,7 +121,7 @@ const motion=new MotionCapture(ui('motion-video'),avatar,{
     updateAbilities();
   },
 });
-const ar=new GardenAR(ui('ar-canvas'),message=>{ui('ar-status').textContent=message;},updateARAbilities);
+const ar=new MarkerAR(ui('ar-video'),ui('ar-canvas'),message=>{ui('ar-status').textContent=message;},updateARAbilities);
 
 function closeCamera() {
   cameraRequest++;
@@ -139,7 +139,8 @@ function updateMotionButtons() {
   ui('replay').disabled=!motionClip || openingCamera || Boolean(motion.recording);
   ui('download').disabled=!riggedAvatar || openingCamera || motion.active;
   ui('rig-edit').disabled=openingCamera || Boolean(motion.recording);
-  ui('start-ar').disabled=!renderer;
+  ui('start-ar').disabled=!renderer||!markerId(ui('marker-number').value);
+  ui('view-garden').disabled=!renderer;
 }
 
 function stopPreview() {
@@ -180,6 +181,7 @@ function frameModel(model,front=false) {
 function refreshEditor() {
   ui('undo').disabled=showingExample||!undoStack.length;
   ui('rig-preview').disabled=!avatar.parts.size;
+  ui('extension-place-setting').hidden=!avatar.parts.has('extension');
   for (const button of document.querySelectorAll('[data-part]')) {
     button.disabled=avatar.parts.has(button.dataset.part);
   }
@@ -372,75 +374,92 @@ function invalidateBodyRig() {
   updateAbilities();
 }
 
-function reactionSettings() {
-  const part=ui('reaction-part').value;
-  return ui('use-listening').checked ? {
-    part,
-    size:Number(ui('ear-angle').value)/5,
-    clip:part==='extension' ? clayClip : null,
-  } : null;
-}
-
-function reactionLabel(settings) {
-  return settings?.part==='ears' ? '듣기' : '움직이기';
+function selectedRule() {
+  const trigger=ui('rule-trigger').value;
+  const part=ui('rule-part').value;
+  const action=ui('rule-action').value;
+  if (!part || !action || trigger==='none') return null;
+  return {
+    trigger,part,action,
+    size:Number(ui('rule-size').value)/5,
+    count:Number(ui('rule-count').value),
+    clip:action==='recorded'?clayClip:null,
+  };
 }
 
 function clearReactionPreview() {
-  previewReaction?.(0);
-  reactionAmount=0;
-  ui('listen-preview').setAttribute('aria-pressed','false');
+  previewRule?.stop();
+  previewRule=null;
+  partReaction(displayAvatar().model,'extension')(0);
+}
+
+function setChoices(select,choices,placeholder) {
+  const selected=select.value;
+  select.replaceChildren(new Option(placeholder,''),...choices.map(([value,label])=>new Option(label,value)));
+  if (choices.some(([value])=>value===selected)) select.value=selected;
+}
+
+function updateRuleOptions() {
+  const parts=[
+    ['extension','코·꼬리',avatar.parts.has('extension')],
+    ['ears','귀',avatar.parts.has('ears')],
+    ['head','머리',avatar.parts.has('head')],
+    ['hands','손',Boolean(riggedAvatar)],
+  ];
+  setChoices(ui('rule-part'),parts.filter(([, ,available])=>available),'고르기');
+  const part=ui('rule-part').value;
+  const actions=(partActions[part]??[]).filter(([value])=>value!=='recorded'||clayClip);
+  setChoices(ui('rule-action'),actions,'고르기');
+  const isRecording=Boolean(clayRecording);
+  const hasParts=parts.some(([, ,available])=>available);
+  ui('rule-help').hidden=hasParts;
+  ui('rule-blocks').hidden=!hasParts;
+  ui('rule-options').hidden=!selectedRule();
+  ui('rule-size-options').hidden=ui('rule-action').value==='recorded';
+  ui('extension-settings').hidden=part!=='extension';
+  ui('rule-trigger').disabled=isRecording;
+  ui('rule-part').disabled=isRecording;
+  ui('rule-action').disabled=!part||isRecording;
+  ui('rule-preview').disabled=isRecording;
+  ui('record-clay').disabled=isRecording;
+  ui('replay-clay').disabled=!clayClip||isRecording;
+  ui('download-clay').disabled=!clayClip||isRecording;
 }
 
 function updateAbilities() {
-  const reaction=reactionSettings();
-  ui('listening-options').hidden=!reaction;
-  ui('extension-settings').hidden=reaction?.part!=='extension';
-  ui('listen-preview').textContent=reactionLabel(reaction);
-  ui('sound-options').hidden=!ui('use-sound').checked;
+  updateRuleOptions();
   ui('use-movement').disabled=!motionClip;
   ui('movement-help').hidden=Boolean(motionClip);
   ui('movement-options').hidden=!motionClip || !ui('use-movement').checked;
-  const isRecording=Boolean(clayRecording);
-  for (const id of ['use-listening','reaction-part','extension-place','listen-preview','record-clay']) {
-    ui(id).disabled=isRecording;
-  }
-  ui('replay-clay').disabled=!clayClip || isRecording;
-  ui('download-clay').disabled=!clayClip || isRecording;
   displayRig();
 }
 
-function configureReaction() {
+function updateARAbilities(visible,settings) {
+  ui('ar-abilities').hidden=!visible || !settings?.sound;
+  ui('sound-ar').dataset.pitch=settings?.sound??'';
+}
+
+function tryRule() {
+  const rule=selectedRule();
+  if (!rule || clayRecording) return;
+  stopPreview();
   clearReactionPreview();
-  const reaction=reactionSettings();
-  if (reaction) {
-    addClayPart(reaction.part);
-    previewReaction=partReaction(displayAvatar().model,reaction.part);
-  } else {
-    previewReaction=null;
-  }
-  updateAbilities();
+  previewRule=new PartRule(displayAvatar().model,rule);
+  previewRule.trigger();
+  ui('ability-status').hidden=false;
+  ui('ability-status').textContent=rule.trigger==='tap'
+    ? '정원에서는 캐릭터를 터치하면 이 동작을 해요.'
+    : '정원 표식에서 나타날 때 이 동작을 해요.';
 }
 
-function updateARAbilities(placed) {
-  const reaction=reactionSettings();
-  const sound=ui('use-sound').checked;
-  const button=ui('listen-ar');
-  button.hidden=!reaction;
-  button.textContent=reaction?.clip ? '녹화 동작 재생' : reactionLabel(reaction);
-  if (reaction?.clip) button.removeAttribute('aria-pressed');
-  else button.setAttribute('aria-pressed','false');
-  ui('sound-ar').hidden=!sound;
-  ui('ar-abilities').hidden=!placed || (!reaction && !sound);
-}
-
-async function playCreatureSound(status) {
+async function playCreatureSound(status,setting=Number(ui('sound-pitch').value)) {
   try {
     audioContext??=new AudioContext();
     if (audioContext.state!=='running') await audioContext.resume();
     const now=audioContext.currentTime;
     const oscillator=audioContext.createOscillator();
     const volume=audioContext.createGain();
-    const pitch=165*2**((Number(ui('sound-pitch').value)-1)/3);
+    const pitch=165*2**((setting-1)/3);
     oscillator.type='triangle';
     oscillator.frequency.setValueAtTime(pitch,now);
     oscillator.frequency.exponentialRampToValueAtTime(pitch*1.35,now+.11);
@@ -521,14 +540,11 @@ function setStep(value) {
   if (orbit) orbit.enabled=step!=='make' || tool==='orbit';
   ui('viewport').classList.toggle('orbit-mode',value!=='make'||tool==='orbit');
   if (step==='place') {
-    ui('place-status').textContent='정원에서 고른 자리를 태블릿으로 비춰요.';
-    if (renderer && matchMedia('(pointer: coarse)').matches) warmUpAR().catch(()=>{});
+    ui('place-status').textContent='QR 표식을 평평한 곳에 놓아 주세요.';
+    updateMarkerPreview();
   }
   if (step==='move') startRigPlacement();
-  if (step==='ability') {
-    const reaction=reactionSettings();
-    previewReaction=reaction?partReaction(displayAvatar().model,reaction.part):null;
-  }
+  ui('ability-status').hidden=true;
   refreshEditor();
   updateMotionButtons();
   updateAbilities();
@@ -671,10 +687,7 @@ ui('undo').addEventListener('click',()=>{
       ui('clay-bend').value='0';
       ui('clay-recording-status').textContent='녹화를 누르고 슬라이더를 움직여요.';
     }
-    if (reactionSettings()?.part===last.part) {
-      ui('use-listening').checked=false;
-      configureReaction();
-    }
+    updateAbilities();
     frameModel(avatar.model);
   } else {
     for (const [mesh,values] of last.changes) restoreBrushAttribute(mesh,last.attribute,values);
@@ -725,19 +738,42 @@ ui('replay').addEventListener('click',()=>{
   closeCamera();
   preview(motionClip);
 });
-async function downloadWork(status) {
+function gardenWork() {
+  const model=snapshotModel(displayAvatar());
+  const rule=selectedRule();
   const animations=[motionClip,clayClip].filter(Boolean);
-  if (!riggedAvatar && !animations.length) return;
+  const settings={
+    motion:ui('use-movement').checked?motionClip?.name:null,
+    speed:Number(ui('motion-speed').value),
+    sound:ui('use-sound').checked?Number(ui('sound-pitch').value):null,
+  };
+  if (rule) {
+    const {clip,...blocks}=rule;
+    settings.rule={...blocks,animation:clip?.name};
+  }
+  model.userData.gardenPlace=ui('place-note').value.trim();
+  model.userData.gardenWork=settings;
+  return {model,animations,settings};
+}
+
+async function downloadWork(status,id) {
+  const {model,animations}=gardenWork();
+  if (!id && !riggedAvatar && !animations.length) return;
   try {
-    const exportModel=snapshotModel(displayAvatar());
-    exportModel.userData.gardenPlace=ui('place-note').value.trim();
-    const glb=await new GLTFExporter().parseAsync(exportModel,{binary:true,animations});
-    const url=URL.createObjectURL(new Blob([glb],{type:'model/gltf-binary'}));
+    if (id) model.userData.gardenMarker=id;
+    const glb=await new GLTFExporter().parseAsync(model,{binary:true,animations});
+    const file=new Blob([glb],{type:'model/gltf-binary'});
+    if (id) await saveMarkerWork(id,file).catch(()=>{});
+    const url=URL.createObjectURL(file);
     const link=document.createElement('a');
     link.href=url;
-    link.download='moka-garden-creature.glb';
+    link.download=id?id+'.glb':'moka-garden-creature.glb';
     link.click();
     setTimeout(()=>URL.revokeObjectURL(url),1500);
+    if (id) {
+      status.textContent='작품을 저장했어요. 다른 태블릿에서도 보려면 이 파일을 해당 태블릿에 전달해 주세요.';
+      return;
+    }
     status.textContent=animations.length?'동작이 담긴 3D 작품 파일을 저장했어요.':'뼈대가 담긴 3D 작품 파일을 저장했어요.';
   } catch(error) {
     status.textContent='작품 파일을 저장하지 못했어요. 잠시 뒤 다시 눌러 주세요.';
@@ -768,81 +804,121 @@ function sampleClay(now) {
 
 ui('clay-bend').addEventListener('input',()=>{
   if (playingClay) stopPreview();
-  ui('listen-preview').setAttribute('aria-pressed','false');
+  clearReactionPreview();
 });
 ui('record-clay').addEventListener('click',()=>{
-  if (clayRecording || reactionSettings()?.part!=='extension') return;
+  if (clayRecording || ui('rule-part').value!=='extension') return;
   stopPreview();
-  ui('listen-preview').setAttribute('aria-pressed','false');
+  clearReactionPreview();
   clayRecording={start:performance.now(),frames:[{time:0,amount:clayBend()}]};
   ui('clay-recording-status').textContent='녹화 중이에요. 슬라이더를 움직여요.';
   updateAbilities();
 });
 ui('replay-clay').addEventListener('click',()=>{
+  clearReactionPreview();
   if (clayClip) preview(clayClip);
 });
 
-ui('use-listening').addEventListener('change',configureReaction);
-ui('reaction-part').addEventListener('change',configureReaction);
+for (const id of ['rule-trigger','rule-part','rule-action','rule-count']) {
+  ui(id).addEventListener('change',()=>{
+    clearReactionPreview();
+    ui('ability-status').hidden=true;
+    updateRuleOptions();
+  });
+}
+ui('rule-preview').addEventListener('click',tryRule);
+ui('extension-settings').addEventListener('toggle',()=>{
+  if (!ui('extension-settings').open) clearReactionPreview();
+});
 ui('extension-place').addEventListener('change',event=>{
-  clearReactionPreview();
   avatar.positionExtension(event.target.value);
   if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
-  const reaction=reactionSettings();
-  previewReaction=reaction?partReaction(displayAvatar().model,reaction.part):null;
   frameModel(displayAvatar().model);
 });
 for (const id of ['use-sound','use-movement']) ui(id).addEventListener('change',updateAbilities);
-for (const id of ['ear-angle','sound-pitch','motion-speed']) {
+for (const id of ['rule-size','sound-pitch','motion-speed']) {
   ui(id).addEventListener('input',event=>{
     const value=event.target.value;
     ui(id+'-value').value=id==='motion-speed' ? value+'배' : value+' / 5';
   });
 }
-ui('listen-preview').addEventListener('click',event=>{
-  const button=event.currentTarget;
-  button.setAttribute('aria-pressed',String(button.getAttribute('aria-pressed')!=='true'));
-});
+
 ui('sound-preview').addEventListener('click',()=>playCreatureSound(ui('ability-status')));
 ui('movement-preview').addEventListener('click',()=>{
+  clearReactionPreview();
   if (motionClip) preview(motionClip,Number(ui('motion-speed').value));
 });
 
-ui('start-ar').addEventListener('click',async()=>{
-  if (!renderer) return;
+async function updateMarkerPreview() {
+  const id=markerId(ui('marker-number').value);
+  ui('save-marker-work').disabled=!id;
+  ui('print-marker').disabled=!id;
+  ui('start-ar').disabled=!renderer||!id;
+  ui('marker-sheet').hidden=!id;
+  if (!id) return;
+  ui('marker-label').textContent='모카가든 '+id.slice(-2);
+  try {
+    await showMarker(ui('marker-qr'),id);
+  } catch {
+    ui('print-marker').disabled=true;
+    ui('place-status').textContent='QR을 그리지 못했어요. 페이지를 새로고침해 주세요.';
+  }
+}
+
+ui('marker-number').addEventListener('input',updateMarkerPreview);
+ui('print-marker').addEventListener('click',()=>window.print());
+ui('save-marker-work').addEventListener('click',()=>{
+  const id=markerId(ui('marker-number').value);
+  if (id) downloadWork(ui('place-status'),id);
+});
+
+let arReturnFocus=null;
+async function openMarkerAR(work,id) {
+  arReturnFocus=document.activeElement;
   closeCamera();
   stopPreview();
   clearReactionPreview();
   ui('ar-overlay').hidden=false;
-  ui('ar-status').textContent='뒤 카메라와 정원 위치 추적을 준비하고 있어요.';
+  ui('ar-status').textContent='뒤 카메라를 준비하고 있어요.';
   ui('close-ar').focus();
   try {
-    await ar.open(snapshotModel(displayAvatar()),ui('use-movement').checked?motionClip:null,{
-      reaction:reactionSettings(),
-      speed:Number(ui('motion-speed').value),
-    });
+    await ar.open({work,id});
   } catch(error) {
     if (!ui('ar-overlay').hidden) ui('ar-status').textContent=error.message;
     console.error(error);
   }
+}
+
+ui('start-ar').addEventListener('click',()=>{
+  const id=markerId(ui('marker-number').value);
+  if (!id || !renderer) return;
+  openMarkerAR(gardenWork(),id);
 });
+ui('view-garden').addEventListener('click',()=>{
+  if (renderer) openMarkerAR(null,null);
+});
+ui('ar-work-file').addEventListener('change',async event=>{
+  const file=event.target.files[0];
+  event.target.value='';
+  if (!file) return;
+  try {
+    await ar.loadFile(file);
+  } catch(error) {
+    ui('ar-status').textContent=error.message;
+  }
+});
+ar.onFileNeeded=id=>{
+  ui('ar-file-label').hidden=!id;
+  ui('ar-work-file').hidden=!id;
+  ui('ar-file-label').textContent=id?'작품 파일 열기 ('+id+'.glb)':'작품 파일 열기';
+};
 function closeAR() {
   ar.stop();
   ui('ar-overlay').hidden=true;
-  ui('start-ar').focus();
+  arReturnFocus?.focus();
 }
 ui('close-ar').addEventListener('click',closeAR);
-ui('smaller').addEventListener('click',()=>ar.resize(.82));
-ui('larger').addEventListener('click',()=>ar.resize(1.22));
-ui('rotate-ar').addEventListener('click',()=>ar.rotate());
-ui('reset-ar').addEventListener('click',()=>ar.reset());
-ui('listen-ar').addEventListener('click',event=>{
-  const active=ar.toggleReaction();
-  if (event.currentTarget.hasAttribute('aria-pressed')) {
-    event.currentTarget.setAttribute('aria-pressed',String(active));
-  }
-});
-ui('sound-ar').addEventListener('click',()=>playCreatureSound(ui('ar-status')));
+ui('sound-ar').addEventListener('click',event=>playCreatureSound(ui('ar-status'),Number(event.currentTarget.dataset.pitch)));
 window.addEventListener('keydown',event=>{
   if (event.key==='Escape' && !ui('ar-overlay').hidden) closeAR();
 });
@@ -856,15 +932,15 @@ function draw(now) {
   const elapsed=Math.min((now-last)/1000,.06);
   last=now;
   if (renderer && ui('ar-overlay').hidden) {
+    previewRule?.clearPose();
     if (motion.active) motion.update(now);
     else mixer?.update(elapsed);
     if (clayRecording) sampleClay(now);
-    if (step==='ability' && previewReaction && !playingClay) {
-      const pressed=ui('listen-preview').getAttribute('aria-pressed')==='true';
-      const reaction=reactionSettings();
-      const target=pressed ? reaction.size : reaction.part==='extension' ? clayBend() : 0;
-      reactionAmount=THREE.MathUtils.damp(reactionAmount,target,13,elapsed);
-      previewReaction(reactionAmount);
+    if (step==='ability') {
+      if (!previewRule?.active && !playingClay && ui('rule-part').value==='extension' && ui('extension-settings').open) {
+        partReaction(displayAvatar().model,'extension')(clayBend());
+      }
+      previewRule?.update(elapsed);
     }
     orbit.update();
     if (!rigOverlay.hidden) {

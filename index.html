@@ -16,6 +16,7 @@
       <button type="button" data-step="ability"><span>3</span> 기능 붙이기</button>
       <button type="button" data-step="place"><span>4</span> 정원에 놓기</button>
     </nav>
+    <button type="button" id="view-garden" class="secondary">가든 작품 보기</button>
   </header>
 
   <main>
@@ -66,6 +67,10 @@
                 <button type="button" data-part="extension" class="secondary">＋ 움직이는 점토</button>
               </div>
             </fieldset>
+            <div id="extension-place-setting" class="ability-options" hidden>
+              <label for="extension-place">움직이는 점토를 붙일 자리</label>
+              <select id="extension-place"><option value="top">위</option><option value="front">앞 · 코</option><option value="side">옆</option><option value="back">뒤 · 꼬리</option></select>
+            </div>
             <div class="control-actions">
               <button type="button" id="rig-preview" class="secondary" disabled>뼈대로 움직여 보기</button>
               <button type="button" data-step="move" class="primary">동작 녹화로</button>
@@ -110,28 +115,50 @@
 
         <section id="panel-ability" class="panel" hidden>
           <h2>내 생명체는 뭘 할까?</h2>
-          <p>정원에서 쓸 기능을 골라 붙여요. 슬라이더를 바꾸고 바로 시험해 봐요.</p>
+          <p>내 캐릭터의 특징이 정원에서 어떻게 움직일지 정해요.</p>
           <div class="abilities">
-            <fieldset class="ability-card">
-              <label class="ability-choice"><input id="use-listening" type="checkbox" aria-controls="listening-options"> 버튼으로 몸 움직이기</label>
-              <div id="listening-options" class="ability-options" hidden>
-                <label for="reaction-part">움직일 부분</label>
-                <select id="reaction-part"><option value="ears">귀</option><option value="extension">움직이는 점토</option></select>
-                <div id="extension-settings" class="ability-options" hidden>
-                  <label for="extension-place">점토 붙일 자리</label>
-                  <select id="extension-place"><option value="top">위</option><option value="front">앞</option><option value="side">옆</option><option value="back">뒤</option></select>
-                  <button type="button" data-step="make" class="text-button">붙인 점토 더 빚기</button>
+            <fieldset class="ability-card rule-card">
+              <legend>내 특징에 반응 붙이기</legend>
+              <p>빚어 놓은 부위를 골라 세 블록을 연결해요.</p>
+              <div id="rule-blocks" class="rule-blocks">
+                <label class="rule-block">
+                  <span>언제</span>
+                  <select id="rule-trigger">
+                    <option value="none">고르기</option>
+                    <option value="tap">캐릭터를 터치하면</option>
+                    <option value="place">표식에서 나타나면</option>
+                  </select>
+                </label>
+                <label class="rule-block">
+                  <span>어느 부위가</span>
+                  <select id="rule-part"></select>
+                </label>
+                <label class="rule-block">
+                  <span>어떻게</span>
+                  <select id="rule-action"></select>
+                </label>
+              </div>
+              <p id="rule-help">형태 빚기에서 움직일 부위를 붙여 주세요.</p>
+              <div id="rule-options" class="ability-options" hidden>
+                <div id="rule-size-options">
+                  <div class="ability-setting"><label for="rule-size">움직임 크기</label><output id="rule-size-value" for="rule-size">3 / 5</output></div>
+                  <input id="rule-size" type="range" min="1" max="5" value="3">
+                </div>
+                <label for="rule-count">반복 횟수</label>
+                <select id="rule-count"><option value="1">1번</option><option value="2">2번</option><option value="3">3번</option></select>
+                <button type="button" id="rule-preview" class="secondary">내 반응 시험하기</button>
+              </div>
+              <details id="extension-settings" class="ability-options" hidden>
+                <summary>코·꼬리 움직임 직접 녹화하기</summary>
+                <div class="ability-options">
                   <label for="clay-bend">점토 구부리기</label>
                   <input id="clay-bend" type="range" min="-100" max="100" value="0">
                   <button type="button" id="record-clay" class="secondary">구부리는 동작 3초 녹화</button>
                   <button type="button" id="replay-clay" class="secondary" disabled>녹화한 동작 다시 보기</button>
-                  <button type="button" id="download-clay" class="text-button" disabled>3D 작품 저장 (.glb)</button>
+                  <button type="button" id="download-clay" class="secondary" disabled>3D 작품 저장 (.glb)</button>
                   <p id="clay-recording-status" role="status">녹화를 누르고 슬라이더를 움직여요.</p>
                 </div>
-                <div class="ability-setting"><label for="ear-angle">움직임 크기</label><output id="ear-angle-value" for="ear-angle">3 / 5</output></div>
-                <input id="ear-angle" type="range" min="1" max="5" value="3">
-                <button type="button" id="listen-preview" class="secondary" aria-pressed="false">듣기</button>
-              </div>
+              </details>
             </fieldset>
             <fieldset class="ability-card">
               <label class="ability-choice"><input id="use-sound" type="checkbox" aria-controls="sound-options"> 소리 내기</label>
@@ -157,31 +184,39 @@
 
         <section id="panel-place" class="panel" hidden>
           <h2>생명체가 살 자리</h2>
-          <p>고른 자리를 비추고 화면을 터치해요. 생명체를 놓은 뒤 붙인 기능을 써 봐요.</p>
+          <p>작품에 자리 번호를 정해요. 같은 번호의 QR 표식을 정원에 놓고 비추면 캐릭터가 나타나요.</p>
+          <div class="marker-controls">
+            <label for="marker-number">가든 표식 번호</label>
+            <input type="number" id="marker-number" min="1" max="99" step="1" value="1" inputmode="numeric">
+            <div id="marker-sheet" class="marker-sheet">
+              <canvas id="marker-qr" width="420" height="420" aria-label="가든 QR 표식"></canvas>
+              <strong id="marker-label"></strong>
+            </div>
+            <div class="control-actions">
+              <button type="button" id="print-marker" class="secondary">QR 표식 인쇄</button>
+              <button type="button" id="save-marker-work" class="secondary">표식에 연결해 작품 저장 (.glb)</button>
+            </div>
+          </div>
           <label for="place-note">고른 자리와 그 이유</label>
           <textarea id="place-note" rows="3" maxlength="180" placeholder="이 자리를 고른 이유를 적어요."></textarea>
           <p id="place-status" class="status" aria-live="polite"></p>
-          <button type="button" id="start-ar" class="primary bottom-action">뒤 카메라로 정원 비추기</button>
+          <button type="button" id="start-ar" class="primary bottom-action">뒤 카메라로 QR 비추기</button>
         </section>
       </aside>
     </div>
   </main>
 
-  <footer><span>모카가든 워크숍 프로토타입</span><a href="./8TH-WALL-LICENSE.txt" target="_blank" rel="noreferrer">AR 엔진 · 8th Wall, Niantic Spatial</a></footer>
+  <footer><span>모카가든 워크숍 프로토타입</span></footer>
 
   <section id="ar-overlay" class="ar-overlay" aria-label="정원에서 AR 배치" hidden>
-    <canvas id="ar-canvas" aria-label="정원의 바닥을 탭해 캐릭터를 배치"></canvas>
+    <video id="ar-video" autoplay muted playsinline aria-label="가든 표식 카메라"></video>
+    <canvas id="ar-canvas" aria-label="표식에 나타난 캐릭터"></canvas>
     <div class="ar-top"><button type="button" id="close-ar">편집으로 돌아가기</button><p id="ar-status" aria-live="polite"></p></div>
     <div class="ar-abilities" id="ar-abilities" hidden>
-      <button type="button" id="listen-ar" aria-pressed="false" hidden>듣기</button>
-      <button type="button" id="sound-ar" hidden>소리 내기</button>
+      <button type="button" id="sound-ar">소리 내기</button>
     </div>
-    <div class="ar-actions">
-      <button type="button" id="smaller" aria-label="캐릭터 작게">−</button>
-      <button type="button" id="larger" aria-label="캐릭터 크게">+</button>
-      <button type="button" id="rotate-ar">방향 돌리기</button>
-      <button type="button" id="reset-ar">다시 놓기</button>
-    </div>
+    <label for="ar-work-file" id="ar-file-label" class="ar-file-label" hidden>작품 파일 열기</label>
+    <input type="file" id="ar-work-file" accept=".glb,model/gltf-binary" class="ar-work-input" aria-label="작품 파일 열기" hidden>
   </section>
   <script type="module" src="/src/main.js"></script>
 </body>
