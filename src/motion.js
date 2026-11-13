@@ -1,10 +1,9 @@
 import * as THREE from 'three';
 
 const tracked = [
-  'Pelvis','Spine','Head','UpperArmL','ForearmL','UpperArmR','ForearmR',
-  'ThighL','ShinL','ThighR','ShinR',
+  'Pelvis','Spine','Chest','Head','UpperArmL','ForearmL','HandL','UpperArmR','ForearmR','HandR',
+  'ThighL','ShinL','FootL','ThighR','ShinR','FootR',
 ];
-const down = new THREE.Vector3(0,-1,0);
 const wasm = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm';
 const model = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
 const duration = 3;
@@ -27,49 +26,76 @@ function applyWorldRotation(bone,target,smoothing) {
   bone.updateMatrixWorld(true);
 }
 
-export function applyPose(avatar,landmarks) {
+export function applyPose(avatar,landmarks,imageLandmarks) {
   if (!landmarks || ![11,12,23,24].every(i=>landmarks[i]?.visibility>=.45)) return false;
-  const p = landmarks.map(v=>new THREE.Vector3(v.x,-v.y,-v.z));
-  const shoulder = midpoint(p[11],p[12]);
-  const hip = midpoint(p[23],p[24]);
-  const torsoUp = shoulder.clone().sub(hip);
-  const hipRotation = basis(p[11].clone().sub(p[12]),new THREE.Vector3(0,1,0));
-  const torsoRotation = basis(p[11].clone().sub(p[12]),torsoUp);
-  const {joints} = avatar;
+  const visible=(...indices)=>indices.every(i=>landmarks[i]?.visibility>=.45);
+  const p=landmarks.map(v=>new THREE.Vector3(v.x,-v.y,-v.z));
+  const shoulder=midpoint(p[11],p[12]);
+  const hip=midpoint(p[23],p[24]);
+  const torsoUp=shoulder.clone().sub(hip);
+  const hipRotation=basis(p[23].clone().sub(p[24]),new THREE.Vector3(0,1,0));
+  const torsoRotation=basis(p[11].clone().sub(p[12]),torsoUp);
+  const {joints,directions,restHip}=avatar;
   if (hipRotation) applyWorldRotation(joints.Pelvis,hipRotation,.24);
-  if (torsoRotation) applyWorldRotation(joints.Spine,torsoRotation,.32);
+  if (torsoRotation) {
+    applyWorldRotation(joints.Spine,hipRotation?.clone().slerp(torsoRotation,.5)??torsoRotation,.32);
+    applyWorldRotation(joints.Chest,torsoRotation,.32);
+  }
 
-  if ([7,8].every(i=>landmarks[i].visibility>=.45)) {
-    const headUp = midpoint(p[7],p[8]).sub(shoulder);
-    const headRotation = basis(p[7].clone().sub(p[8]),headUp);
+  if (visible(7,8)) {
+    const headUp=midpoint(p[7],p[8]).sub(shoulder);
+    const headRotation=basis(p[7].clone().sub(p[8]),headUp);
     if (headRotation) applyWorldRotation(joints.Head,headRotation,.35);
   }
 
-  const segments = [
-    ['UpperArmL',11,13],['ForearmL',13,15],['UpperArmR',12,14],['ForearmR',14,16],
-    ['ThighL',23,25],['ShinL',25,27],['ThighR',24,26],['ShinR',26,28],
+  const segments=[
+    ['UpperArmL',11,13],['ForearmL',13,15],['HandL',15,19],
+    ['UpperArmR',12,14],['ForearmR',14,16],['HandR',16,20],
+    ['ThighL',23,25],['ShinL',25,27],['FootL',27,31],
+    ['ThighR',24,26],['ShinR',26,28],['FootR',28,32],
   ];
   for (const [name,a,b] of segments) {
-    if (landmarks[a].visibility<.45 || landmarks[b].visibility<.45) continue;
-    const direction = p[b].clone().sub(p[a]);
+    if (!visible(a,b)) continue;
+    const direction=p[b].clone().sub(p[a]);
     if (direction.lengthSq()<.00005) continue;
-    const bone = joints[name];
+    const bone=joints[name];
     direction.normalize().applyQuaternion(bone.parent.getWorldQuaternion(new THREE.Quaternion()).invert());
-    const target = new THREE.Quaternion().setFromUnitVectors(down,direction);
+    const target=new THREE.Quaternion().setFromUnitVectors(directions[name],direction);
     bone.quaternion.slerp(target,.36);
     bone.updateMatrixWorld(true);
+  }
+
+  if (imageLandmarks?.[24]) {
+    const center=new THREE.Vector2(
+      (imageLandmarks[23].x+imageLandmarks[24].x)/2,
+      (imageLandmarks[23].y+imageLandmarks[24].y)/2,
+    );
+    const shoulderY=(imageLandmarks[11].y+imageLandmarks[12].y)/2;
+    avatar.captureOrigin??={center,scale:Math.max(center.y-shoulderY,.08)};
+    const {center:origin,scale}=avatar.captureOrigin;
+    const units=avatar.height*.28/scale;
+    const target=restHip.clone();
+    target.x+=THREE.MathUtils.clamp((center.x-origin.x)*units,-.8,.8);
+    target.y+=THREE.MathUtils.clamp((origin.y-center.y)*units,-.35,.55);
+    joints.Pelvis.position.lerp(target,.28);
+    joints.Pelvis.updateMatrixWorld(true);
   }
   return true;
 }
 
 function sample(avatar) {
-  return Object.fromEntries(tracked.map(name=>[name,avatar.joints[name].quaternion.toArray()]));
+  const pose=Object.fromEntries(tracked.map(name=>[name,avatar.joints[name].quaternion.toArray()]));
+  pose.position=avatar.joints.Pelvis.position.toArray();
+  return pose;
 }
 
 export function clipFromFrames(frames) {
-  const times = frames.map(frame=>frame.time);
-  const tracks = tracked.map(name=>new THREE.QuaternionKeyframeTrack(
+  const times=frames.map(frame=>frame.time);
+  const tracks=tracked.map(name=>new THREE.QuaternionKeyframeTrack(
     name+'.quaternion',times,frames.flatMap(frame=>frame.pose[name]),
+  ));
+  tracks.push(new THREE.VectorKeyframeTrack(
+    'Pelvis.position',times,frames.flatMap(frame=>frame.pose.position),
   ));
   return new THREE.AnimationClip('My movement',times.at(-1),tracks);
 }
@@ -134,6 +160,7 @@ export class MotionCapture {
     this.active=false;
     this.recording=null;
     this.seesPose=false;
+    this.avatar.captureOrigin=null;
     this.lastFrame=-1;
     this.lastUpdate=-Infinity;
     this.video.srcObject?.getTracks().forEach(track=>track.stop());
@@ -155,8 +182,8 @@ export class MotionCapture {
       this.lastFrame=video.currentTime;
       this.lastUpdate=now;
       try {
-        const landmarks=this.detector.detectForVideo(video,now).worldLandmarks[0];
-        detected=applyPose(this.avatar,landmarks);
+        const result=this.detector.detectForVideo(video,now);
+        detected=applyPose(this.avatar,result.worldLandmarks[0],result.landmarks[0]);
       } catch(error) {
         this.stop();
         this.events.error('동작을 읽는 중 오류가 났어요. 앞 카메라를 다시 켜 주세요.');
@@ -192,7 +219,7 @@ export class MotionCapture {
     this.recording=null;
     const frames=recording.frames;
     if (frames.length<5 || frames.at(-1).time-frames[0].time<1.35) {
-      this.events.error('동작을 충분히 읽지 못했어요. 팔과 몸이 화면에 들어오게 다시 찍어 주세요.');
+      this.events.error('동작을 충분히 읽지 못했어요. 머리부터 발끝까지 화면에 들어오게 다시 찍어 주세요.');
       return;
     }
     if (frames[0].time>0) frames.unshift({time:0,pose:frames[0].pose});

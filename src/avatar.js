@@ -207,24 +207,6 @@ export function createAvatar({example=false}={}) {
     return mesh;
   }
 
-  function fitLimbs(kind,position) {
-    for (const mesh of parts.get(kind)??[]) {
-      if (!mesh.isSkinnedMesh) continue;
-      const [,lower]=mesh.skeleton.bones;
-      mesh.geometry.computeBoundingBox();
-      const length=-mesh.geometry.boundingBox.min.y;
-      const hinge=THREE.MathUtils.clamp(length*position,.08,length-.08);
-      const delta=hinge+lower.position.y;
-      lower.position.y=-hinge;
-      for (const foot of lower.children) foot.position.y+=delta;
-      fitLimbSkin(mesh.geometry,hinge);
-      model.updateMatrixWorld(true);
-      mesh.bind(mesh.skeleton);
-      mesh.boundingBox=null;
-      mesh.boundingSphere=null;
-    }
-  }
-
   function addPart(kind) {
     if (example || parts.has(kind)) return false;
     const created=[];
@@ -315,10 +297,11 @@ export function createAvatar({example=false}={}) {
   }
 
   const rest=Object.fromEntries(Object.entries(joints).map(([name,bone])=>[name,bone.quaternion.clone()]));
-  return {model,joints,rest,surfaces,parts,addPart,removePart,positionExtension,fitLimbs};
+  return {model,joints,rest,surfaces,parts,addPart,removePart,positionExtension};
 }
 
 export function resetPose(avatar) {
+  if (avatar.restHip) avatar.joints.Pelvis.position.copy(avatar.restHip);
   for (const [name,rotation] of Object.entries(avatar.rest)) {
     avatar.joints[name].quaternion.copy(rotation);
   }
@@ -422,6 +405,7 @@ export function snapshotModel(avatar) {
   model.position.set(0,0,0);
   model.rotation.set(0,0,0);
   model.scale.setScalar(1);
+  if (avatar.restHip) model.getObjectByName('Pelvis').position.copy(avatar.restHip);
   for (const [name,rotation] of Object.entries(avatar.rest)) {
     model.getObjectByName(name).quaternion.copy(rotation);
   }

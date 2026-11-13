@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
 import {applyBrush,createAvatar,extensionClip,palette,partReaction,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
+import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
 import {GardenAR,warmUpAR} from './garden-ar.js';
 
@@ -17,17 +18,16 @@ const labels={make:'형태 편집 중',move:'동작 미리 보기',ability:'기�
 const avatar=createAvatar();
 const scene=new THREE.Scene();
 scene.add(avatar.model);
-const rigGuides=new THREE.Group();
-const guideShape=new THREE.SphereGeometry(.036,16,12);
-const guideColor=new THREE.MeshBasicMaterial({color:0xd77c24,depthTest:false});
-for (const name of ['ForearmL','ForearmR','ShinL','ShinR']) {
-  const marker=new THREE.Mesh(guideShape,guideColor);
-  marker.name=name;
-  marker.renderOrder=10;
-  rigGuides.add(marker);
-}
-rigGuides.visible=false;
-scene.add(rigGuides);
+const rigOverlay=document.createElement('div');
+rigOverlay.className='rig-markers';
+rigOverlay.hidden=true;
+rigOverlay.setAttribute('role','group');
+rigOverlay.setAttribute('aria-label','캐릭터 위의 관절 마커');
+const rigAxis=document.createElement('div');
+rigAxis.className='rig-axis';
+rigOverlay.append(rigAxis);
+ui('viewport').parentElement.append(rigOverlay);
+const rigMarkerButtons=new Map();
 const camera=new THREE.OrthographicCamera(-2,2,1.75,-1.75,.1,25);
 camera.position.set(2.15,1.86,6.7);
 let renderer;
@@ -70,12 +70,17 @@ if (orbit) {
     camera.bottom=-halfHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(w,h,false);
+    if (!rigOverlay.hidden) frameModel(avatar.model,true);
   }
   new ResizeObserver(resize).observe(viewport);
   resize();
 }
 
 let step='make';
+let riggedAvatar=null;
+let rigMarkers=null;
+let selectedMarker='chin';
+const displayAvatar=()=>step==='make'?avatar:(riggedAvatar??avatar);
 let tool='pull';
 const paintColor=new THREE.Color(palette[1][1]);
 let motionClip=null;
@@ -99,7 +104,7 @@ const motion=new MotionCapture(ui('motion-video'),avatar,{
     updateMotionButtons();
     if (!motion.recording) ui('motion-status').textContent=visible
       ? '몸짓이 보여요. 준비됐으면 3초 녹화를 눌러요.'
-      : '팔과 몸이 화면 안에 보이게 움직여 주세요.';
+      : '머리부터 발끝까지 화면 안에 보이게 서 주세요.';
   },
   error:message=>{
     ui('motion-status').textContent=message;
@@ -122,17 +127,18 @@ function closeCamera() {
   cameraRequest++;
   openingCamera=false;
   motion.stop();
+  resetPose(displayAvatar());
   ui('camera-tile').hidden=true;
   updateMotionButtons();
 }
 
 function updateMotionButtons() {
-  ui('open-camera').disabled=openingCamera || Boolean(motion.recording);
+  ui('open-camera').disabled=!riggedAvatar || openingCamera || Boolean(motion.recording);
   ui('open-camera').textContent=motion.active ? '앞 카메라 끄기' : '앞 카메라 켜기';
   ui('record').disabled=!motion.active || !motion.seesPose || Boolean(motion.recording);
   ui('replay').disabled=!motionClip || openingCamera || Boolean(motion.recording);
-  ui('download').disabled=(!motionClip && !clayClip) || openingCamera || Boolean(motion.recording);
-  for (const id of ['elbow-position','knee-position']) ui(id).disabled=openingCamera || motion.active;
+  ui('download').disabled=!riggedAvatar || openingCamera || motion.active;
+  ui('rig-edit').disabled=openingCamera || Boolean(motion.recording);
   ui('start-ar').disabled=!renderer;
 }
 
@@ -140,13 +146,13 @@ function stopPreview() {
   mixer?.stopAllAction();
   mixer=null;
   playingClay=false;
-  resetPose(avatar);
+  resetPose(displayAvatar());
 }
 
 function preview(clip,speed=1) {
   stopPreview();
   playingClay=clip===clayClip;
-  mixer=new THREE.AnimationMixer(avatar.model);
+  mixer=new THREE.AnimationMixer(displayAvatar().model);
   const action=mixer.clipAction(clip);
   action.setLoop(THREE.LoopOnce,1);
   action.timeScale=speed;
@@ -154,7 +160,7 @@ function preview(clip,speed=1) {
   action.play();
 }
 
-function frameModel(model) {
+function frameModel(model,front=false) {
   if (!orbit) return;
   model.updateMatrixWorld(true);
   const bounds=new THREE.Box3().setFromObject(model);
@@ -162,11 +168,13 @@ function frameModel(model) {
   const center=bounds.getCenter(new THREE.Vector3());
   const size=bounds.getSize(new THREE.Vector3());
   orbit.target.copy(center);
-  camera.position.copy(center).add(new THREE.Vector3(1.55,.62,6.8));
+  camera.position.copy(center).add(front?new THREE.Vector3(0,0,6.8):new THREE.Vector3(1.55,.62,6.8));
   camera.zoom=Math.min(2.06,(camera.top-camera.bottom)/Math.max(size.y*1.28,1),
     (camera.right-camera.left)/Math.max(size.x*1.36,1));
   camera.updateProjectionMatrix();
+  camera.lookAt(center);
   orbit.update();
+  camera.updateMatrixWorld();
 }
 
 function refreshEditor() {
@@ -182,23 +190,186 @@ function addClayPart(part) {
   stopPreview();
   if (!avatar.addPart(part)) return;
   rememberEdit({part});
-  frameModel(avatar.model);
+  if (['head','arms','legs'].includes(part)) invalidateBodyRig();
+  else if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+  frameModel(displayAvatar().model);
 }
 
-function fitBodyRig() {
-  if (motion.active || openingCamera) return;
+function displayRig() {
+  const active=step==='move';
+  const ready=['head','arms','legs'].every(part=>avatar.parts.has(part));
+  const placing=active && ready && !riggedAvatar && Boolean(renderer);
+  ui('body-rig').hidden=Boolean(riggedAvatar);
+  ui('rig-motion').hidden=!riggedAvatar;
+  ui('rig-controls').hidden=!ready || !renderer;
+  ui('rig-help').hidden=ready;
+  ui('rig-back').hidden=ready;
+  rigOverlay.hidden=!placing;
+  ui('workspace').classList.toggle('rig-mode',active && !riggedAvatar);
+  if (orbit && active) orbit.enabled=Boolean(riggedAvatar);
+}
+
+function setRiggedAvatar(next) {
   stopPreview();
-  avatar.fitLimbs('arms',Number(ui('elbow-position').value)/100);
-  avatar.fitLimbs('legs',Number(ui('knee-position').value)/100);
+  const previous=riggedAvatar;
+  const previousModel=displayAvatar().model;
+  riggedAvatar=next;
+  motion.avatar=displayAvatar();
+  if (previousModel!==displayAvatar().model) {
+    scene.remove(previousModel);
+    scene.add(displayAvatar().model);
+    previous?.dispose();
+  }
+  displayRig();
+  frameModel(displayAvatar().model);
+  updateMotionButtons();
 }
 
-function updateRigGuides() {
-  rigGuides.visible=step==='move' && ui('body-rig').open && !motion.active && !mixer;
-  if (!rigGuides.visible) return;
-  for (const marker of rigGuides.children) {
-    marker.visible=avatar.parts.has(marker.name.startsWith('Forearm')?'arms':'legs');
-    if (marker.visible) avatar.joints[marker.name].getWorldPosition(marker.position);
+function selectMarker(id) {
+  selectedMarker=id;
+  for (const button of ui('rig-marker-list').children) {
+    button.setAttribute('aria-pressed',String(button.dataset.marker===id));
   }
+  for (const button of rigMarkerButtons.values()) {
+    button.setAttribute('aria-pressed',String(button.dataset.group===id));
+  }
+}
+
+function updateRigMarkers() {
+  if (rigOverlay.hidden) return;
+  const project=point=>point.clone().project(camera);
+  const axis=project(new THREE.Vector3(0,orbit.target.y,0));
+  rigAxis.style.left=(axis.x*.5+.5)*100+'%';
+  rigAxis.hidden=!ui('rig-symmetry').checked;
+  for (const [name,button] of rigMarkerButtons) {
+    const point=project(rigMarkers[name]);
+    button.style.left=(point.x*.5+.5)*100+'%';
+    button.style.top=(.5-point.y*.5)*100+'%';
+  }
+}
+
+function startRigPlacement() {
+  displayRig();
+  if (rigOverlay.hidden) return;
+  rigMarkers??=defaultMarkers(avatar);
+  frameModel(avatar.model,true);
+  selectMarker(selectedMarker);
+  updateRigMarkers();
+}
+
+function moveRigMarker(name,event) {
+  const bounds=rigOverlay.getBoundingClientRect();
+  const x=THREE.MathUtils.clamp((event.clientX-bounds.left)/bounds.width,0,1);
+  const y=THREE.MathUtils.clamp((event.clientY-bounds.top)/bounds.height,0,1);
+  const point=new THREE.Vector3(x*2-1,1-y*2,0).unproject(camera);
+  const marker=rigMarkers[name];
+  marker.set(point.x,point.y,marker.z);
+  const side=name.at(-1);
+  if (ui('rig-symmetry').checked) {
+    if (side==='L' || side==='R') {
+      const other=rigMarkers[name.slice(0,-1)+(side==='L'?'R':'L')];
+      other.x=-marker.x;
+      other.y=marker.y;
+    } else {
+      marker.x=0;
+    }
+  }
+  ui('rig-status').textContent='';
+  updateRigMarkers();
+}
+
+for (const {id,label,color,points} of markerGroups) {
+  const control=document.createElement('button');
+  control.type='button';
+  control.dataset.marker=id;
+  control.textContent=label;
+  control.style.setProperty('--marker-color',color);
+  control.addEventListener('click',()=>selectMarker(id));
+  ui('rig-marker-list').append(control);
+  for (const name of points) {
+    const marker=document.createElement('button');
+    marker.type='button';
+    marker.className='rig-marker';
+    marker.dataset.group=id;
+    const side=name.endsWith('L')?'캐릭터 왼쪽 ':name.endsWith('R')?'캐릭터 오른쪽 ':'';
+    marker.setAttribute('aria-label',side+label);
+    marker.style.setProperty('--marker-color',color);
+    marker.addEventListener('pointerdown',event=>{
+      if (event.button!==0) return;
+      selectMarker(id);
+      marker.setPointerCapture(event.pointerId);
+    });
+    marker.addEventListener('pointermove',event=>{
+      if (marker.hasPointerCapture(event.pointerId)) moveRigMarker(name,event);
+    });
+    marker.addEventListener('keydown',event=>{
+      const offset={ArrowLeft:[-5,0],ArrowRight:[5,0],ArrowUp:[0,-5],ArrowDown:[0,5]}[event.key];
+      if (!offset) return;
+      event.preventDefault();
+      selectMarker(id);
+      const bounds=marker.getBoundingClientRect();
+      moveRigMarker(name,{clientX:bounds.x+bounds.width/2+offset[0],clientY:bounds.y+bounds.height/2+offset[1]});
+    });
+    rigMarkerButtons.set(name,marker);
+    rigOverlay.append(marker);
+  }
+}
+
+rigOverlay.addEventListener('pointerdown',event=>{
+  if (event.target!==rigOverlay || event.button!==0) return;
+  const group=markerGroups.find(group=>group.id===selectedMarker);
+  const rect=rigOverlay.getBoundingClientRect();
+  const axis=rect.left+rect.width*(new THREE.Vector3(0,orbit.target.y,0).project(camera).x*.5+.5);
+  const name=group.points.length===1?group.points[0]:group.points[event.clientX>=axis?0:1];
+  moveRigMarker(name,event);
+});
+
+ui('rig-reset').addEventListener('click',()=>{
+  rigMarkers=defaultMarkers(avatar);
+  ui('rig-status').textContent='';
+  updateRigMarkers();
+});
+
+ui('rig-symmetry').addEventListener('change',event=>{
+  if (!event.target.checked) return;
+  rigMarkers.chin.x=0;
+  rigMarkers.groin.x=0;
+  for (const {points} of markerGroups.filter(group=>group.points.length===2)) {
+    const [left,right]=points.map(name=>rigMarkers[name]);
+    right.x=-left.x;
+    right.y=left.y;
+  }
+  updateRigMarkers();
+});
+
+ui('rig-apply').addEventListener('click',()=>{
+  try {
+    setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+    ui('motion-status').textContent='뼈대가 연결됐어요. 앞 카메라를 켜서 함께 움직여 봐요.';
+    ui('open-camera').focus();
+  } catch(error) {
+    ui('rig-status').textContent=error.message;
+  }
+});
+
+ui('rig-edit').addEventListener('click',()=>{
+  closeCamera();
+  motionClip=null;
+  ui('use-movement').checked=false;
+  setRiggedAvatar(null);
+  updateAbilities();
+  startRigPlacement();
+  ui('rig-apply').focus();
+});
+
+function invalidateBodyRig() {
+  rigMarkers=null;
+  ui('rig-status').textContent='';
+  if (!riggedAvatar && !motionClip) return;
+  motionClip=null;
+  ui('use-movement').checked=false;
+  setRiggedAvatar(null);
+  updateAbilities();
 }
 
 function reactionSettings() {
@@ -235,12 +406,7 @@ function updateAbilities() {
   }
   ui('replay-clay').disabled=!clayClip || isRecording;
   ui('download-clay').disabled=!clayClip || isRecording;
-  const arms=avatar.parts.has('arms');
-  const legs=avatar.parts.has('legs');
-  ui('elbow-setting').hidden=!arms;
-  ui('knee-setting').hidden=!legs;
-  ui('rig-help').hidden=arms || legs;
-  ui('rig-guide').hidden=!arms && !legs;
+  displayRig();
 }
 
 function configureReaction() {
@@ -248,7 +414,7 @@ function configureReaction() {
   const reaction=reactionSettings();
   if (reaction) {
     addClayPart(reaction.part);
-    previewReaction=partReaction(avatar.model,reaction.part);
+    previewReaction=partReaction(displayAvatar().model,reaction.part);
   } else {
     previewReaction=null;
   }
@@ -329,7 +495,15 @@ function setStep(value) {
   }
   stopPreview();
   clearReactionPreview();
+  const previousModel=displayAvatar().model;
   step=value;
+  const nextModel=displayAvatar().model;
+  if (previousModel!==nextModel) {
+    scene.remove(previousModel);
+    scene.add(nextModel);
+  }
+  motion.avatar=displayAvatar();
+  frameModel(nextModel);
   for (const [id] of Object.entries(intro)) {
     ui('panel-'+id).hidden=id!==value;
     const item=document.querySelector('.steps [data-step="'+id+'"]');
@@ -350,7 +524,11 @@ function setStep(value) {
     ui('place-status').textContent='정원에서 고른 자리를 태블릿으로 비춰요.';
     if (renderer && matchMedia('(pointer: coarse)').matches) warmUpAR().catch(()=>{});
   }
-  if (step==='move' && ui('body-rig').open) fitBodyRig();
+  if (step==='move') startRigPlacement();
+  if (step==='ability') {
+    const reaction=reactionSettings();
+    previewReaction=reaction?partReaction(displayAvatar().model,reaction.part):null;
+  }
   refreshEditor();
   updateMotionButtons();
   updateAbilities();
@@ -469,7 +647,10 @@ if (renderer) {
       orbit.enabled=showingExample||step!=='make'||tool==='orbit';
     }
     if (event.pointerId!==brush?.id) return;
-    if (brush.changes.size) rememberEdit({attribute:brush.attribute,changes:brush.changes});
+    if (brush.changes.size) {
+      rememberEdit({attribute:brush.attribute,changes:brush.changes});
+      invalidateBodyRig();
+    }
     brush=null;
     if (event.pointerType==='touch') cursor.hidden=true;
   }
@@ -483,6 +664,8 @@ ui('undo').addEventListener('click',()=>{
   if (last.part) {
     stopPreview();
     avatar.removePart(last.part);
+    if (['head','arms','legs'].includes(last.part)) invalidateBodyRig();
+    else if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
     if (last.part==='extension') {
       clayClip=null;
       ui('clay-bend').value='0';
@@ -495,22 +678,19 @@ ui('undo').addEventListener('click',()=>{
     frameModel(avatar.model);
   } else {
     for (const [mesh,values] of last.changes) restoreBrushAttribute(mesh,last.attribute,values);
+    invalidateBodyRig();
   }
   refreshEditor();
 });
 
 ui('rig-preview').addEventListener('click',()=>preview(rigPreview()));
-ui('body-rig').addEventListener('toggle',()=>{
-  if (ui('body-rig').open && step==='move') fitBodyRig();
-});
-for (const id of ['elbow-position','knee-position']) ui(id).addEventListener('input',fitBodyRig);
 ui('open-camera').addEventListener('click',async()=>{
   if (motion.active) {
     closeCamera();
     ui('motion-status').textContent='앞 카메라를 껐어요.';
     return;
   }
-  if (!renderer) return;
+  if (!renderer || !riggedAvatar) return;
   stopPreview();
   openingCamera=true;
   updateMotionButtons();
@@ -520,7 +700,7 @@ ui('open-camera').addEventListener('click',async()=>{
   try {
     const opened=await motion.open();
     if (!opened || request!==cameraRequest) return;
-    ui('motion-status').textContent='팔과 몸이 화면 안에 보이게 움직여 주세요.';
+    if (!motion.seesPose) ui('motion-status').textContent='머리부터 발끝까지 화면 안에 보이게 서 주세요.';
   } catch(error) {
     if (request!==cameraRequest) return;
     ui('camera-tile').hidden=true;
@@ -547,9 +727,9 @@ ui('replay').addEventListener('click',()=>{
 });
 async function downloadWork(status) {
   const animations=[motionClip,clayClip].filter(Boolean);
-  if (!animations.length) return;
+  if (!riggedAvatar && !animations.length) return;
   try {
-    const exportModel=snapshotModel(avatar);
+    const exportModel=snapshotModel(displayAvatar());
     exportModel.userData.gardenPlace=ui('place-note').value.trim();
     const glb=await new GLTFExporter().parseAsync(exportModel,{binary:true,animations});
     const url=URL.createObjectURL(new Blob([glb],{type:'model/gltf-binary'}));
@@ -558,7 +738,7 @@ async function downloadWork(status) {
     link.download='moka-garden-creature.glb';
     link.click();
     setTimeout(()=>URL.revokeObjectURL(url),1500);
-    status.textContent='동작이 담긴 3D 작품 파일을 저장했어요.';
+    status.textContent=animations.length?'동작이 담긴 3D 작품 파일을 저장했어요.':'뼈대가 담긴 3D 작품 파일을 저장했어요.';
   } catch(error) {
     status.textContent='작품 파일을 저장하지 못했어요. 잠시 뒤 다시 눌러 주세요.';
     console.error(error);
@@ -605,8 +785,12 @@ ui('replay-clay').addEventListener('click',()=>{
 ui('use-listening').addEventListener('change',configureReaction);
 ui('reaction-part').addEventListener('change',configureReaction);
 ui('extension-place').addEventListener('change',event=>{
+  clearReactionPreview();
   avatar.positionExtension(event.target.value);
-  frameModel(avatar.model);
+  if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+  const reaction=reactionSettings();
+  previewReaction=reaction?partReaction(displayAvatar().model,reaction.part):null;
+  frameModel(displayAvatar().model);
 });
 for (const id of ['use-sound','use-movement']) ui(id).addEventListener('change',updateAbilities);
 for (const id of ['ear-angle','sound-pitch','motion-speed']) {
@@ -633,7 +817,7 @@ ui('start-ar').addEventListener('click',async()=>{
   ui('ar-status').textContent='뒤 카메라와 정원 위치 추적을 준비하고 있어요.';
   ui('close-ar').focus();
   try {
-    await ar.open(snapshotModel(avatar),ui('use-movement').checked?motionClip:null,{
+    await ar.open(snapshotModel(displayAvatar()),ui('use-movement').checked?motionClip:null,{
       reaction:reactionSettings(),
       speed:Number(ui('motion-speed').value),
     });
@@ -682,8 +866,11 @@ function draw(now) {
       reactionAmount=THREE.MathUtils.damp(reactionAmount,target,13,elapsed);
       previewReaction(reactionAmount);
     }
-    updateRigGuides();
     orbit.update();
+    if (!rigOverlay.hidden) {
+      camera.updateMatrixWorld();
+      updateRigMarkers();
+    }
     renderer.render(scene,camera);
   }
   requestAnimationFrame(draw);
