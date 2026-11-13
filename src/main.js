@@ -601,13 +601,21 @@ for (const button of document.querySelectorAll('[data-step]')) {
   button.addEventListener('click',()=>setStep(button.dataset.step));
 }
 
+function updateBrushHint() {
+  const hints={
+    sculpt:ui('sculpt-direction-in').checked?'표면을 문질러 오목하게':'표면을 문질러 볼록하게',
+    grab:'점토를 잡고 끄는 방향으로 늘리기',
+    smooth:'표면을 문질러 매끈하게',
+    paint:'표면에 고른 색 칠하기',
+  };
+  ui('stage-hint').textContent=hints[tool]+' · 빈 곳은 끌어서 돌리기';
+}
+
 function selectTool(value) {
   tool=value;
   stopPreview();
   ui('brush-shape').hidden=tool!=='sculpt';
-  ui('stage-hint').textContent=tool==='grab'
-    ? '점토를 잡고 끌기 · 빈 곳을 끌어 돌리기'
-    : '빈 곳을 드래그해 돌려 보기';
+  updateBrushHint();
   ui('brush-cursor').hidden=true;
   ui('mirror-cursor').hidden=true;
   for (const item of document.querySelectorAll('[data-tool]')) {
@@ -625,6 +633,7 @@ function rememberEdit(edit) {
 for (const button of document.querySelectorAll('[data-tool]')) {
   button.addEventListener('click',()=>selectTool(button.dataset.tool));
 }
+ui('brush-shape').addEventListener('change',updateBrushHint);
 
 for (const button of document.querySelectorAll('[data-part]')) {
   button.addEventListener('click',()=>addClayPart(button.dataset.part));

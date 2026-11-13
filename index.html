@@ -30,7 +30,7 @@
 
     <div class="workspace sculpt-mode" id="workspace">
       <aside class="tool-rail" id="brush-rail" aria-label="스컬핑 도구">
-        <button type="button" data-tool="sculpt" aria-pressed="true"><span aria-hidden="true">＋</span>빚기</button>
+        <button type="button" data-tool="sculpt" aria-pressed="true"><span aria-hidden="true">＋</span>부풀리기</button>
         <button type="button" data-tool="grab" aria-pressed="false"><span aria-hidden="true">↔</span>잡아당기기</button>
         <button type="button" data-tool="smooth" aria-pressed="false"><span aria-hidden="true">≈</span>다듬기</button>
         <button type="button" data-tool="paint" aria-pressed="false"><span aria-hidden="true">●</span>칠하기</button>
@@ -43,7 +43,7 @@
           <button type="button" id="undo" disabled>되돌리기</button>
           <button type="button" id="show-example" aria-pressed="false">예시 보기</button>
         </div>
-        <div class="studio-meta"><span id="stage-label">내 점토 인형</span><span id="stage-hint">빈 곳을 드래그해 돌려 보기</span></div>
+        <div class="studio-meta"><span id="stage-label">내 점토 인형</span><span id="stage-hint">표면을 문질러 볼록하게 · 빈 곳은 끌어서 돌리기</span></div>
         <p id="clay-fusion-status" class="clay-fusion-status" role="status" hidden></p>
         <p id="graphics-error" class="graphics-error" hidden>이 기기에서 3D 화면을 열 수 없어요. 브라우저의 WebGL 지원을 확인해 주세요.</p>
         <div id="camera-tile" class="camera-tile" hidden>
@@ -58,8 +58,8 @@
             <fieldset class="brush-settings">
               <legend>붓</legend>
               <div class="brush-direction" id="brush-shape" role="group" aria-label="빚는 방향">
-                <label><input type="radio" name="sculpt-direction" checked> 나오게</label>
-                <label><input type="radio" name="sculpt-direction" id="sculpt-direction-in"> 들어가게</label>
+                <label><input type="radio" name="sculpt-direction" checked> 볼록하게</label>
+                <label><input type="radio" name="sculpt-direction" id="sculpt-direction-in"> 오목하게</label>
               </div>
               <div class="brush-control"><label for="brush-size">크기</label><input id="brush-size" type="range" min="1" max="10" value="5"></div>
               <div class="brush-control"><label for="brush-strength">세기</label><input id="brush-strength" type="range" min="1" max="10" value="6"></div>
