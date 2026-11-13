@@ -454,7 +454,7 @@ export function reflectedBrush(avatar,hit) {
   const point=hit.point.clone().applyMatrix4(modelInverse);
   point.x=-point.x;
   point.applyMatrix4(model.matrixWorld);
-  const normal=hit.face.normal.clone()
+  const normal=(hit.normal??hit.face.normal).clone()
     .transformDirection(hit.object.matrixWorld)
     .transformDirection(modelInverse);
   normal.x=-normal.x;
@@ -464,11 +464,11 @@ export function reflectedBrush(avatar,hit) {
 
 export function applyBrush(hits,tool,radius,distance,color,pressure=1) {
   const samplesByMesh=new Map();
-  for (const {object,point,face} of hits) {
+  for (const {object,point,normal,face} of hits) {
     if (!samplesByMesh.has(object)) samplesByMesh.set(object,[]);
     samplesByMesh.get(object).push({
       center:object.worldToLocal(point.clone()),
-      normal:face.normal.clone().normalize(),
+      normal:(normal??face.normal).clone().normalize(),
     });
   }
   for (const [mesh,samples] of samplesByMesh) {
@@ -484,6 +484,16 @@ function applyBrushSamples(mesh,samples,tool,radius,distance,color,pressure) {
   const radiusSquared=radius*radius;
   const strength=Math.min(.027,Math.max(.008,distance*.0022))*pressure*(tool==='push'?-1:1);
   const adjacency=tool==='smooth'?surfaceNeighbors(geometry):null;
+  const sculpt=tool==='pull'||tool==='push';
+  if (sculpt && samples.length===2) {
+    const [left,right]=samples;
+    const center=left.center.clone().lerp(right.center,.5);
+    // Feather a mirrored pair into one brush as it approaches the symmetry plane.
+    const separation=left.center.distanceTo(right.center)/(2*radius);
+    const split=THREE.MathUtils.smoothstep(separation,.4,1);
+    left.center.lerp(center,1-split);
+    right.center.lerp(center,1-split);
+  }
   const output=attribute.array.slice();
   const normal=new THREE.Vector3();
   for (let i=0;i<positions.length;i+=3) {
@@ -497,7 +507,7 @@ function applyBrushSamples(mesh,samples,tool,radius,distance,color,pressure) {
       const d=dx*dx+dy*dy+dz*dz;
       if (d>=radiusSquared) continue;
       const weight=(1-d/radiusSquared)**2;
-      influence=Math.max(influence,weight);
+      influence=sculpt?influence+(1-influence)*weight:Math.max(influence,weight);
       totalWeight+=weight;
       normal.addScaledVector(sample.normal,weight);
     }
