@@ -2,7 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
-import {applyBrush,bendableParts,clayPartLabels,createAvatar,extensionClip,palette,partReaction,reflectedBrush,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
+import {applyBrush,bendableParts,clayPartLabels,createAvatar,exampleDance,extensionClip,palette,partReaction,reflectedBrush,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
 import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
 import {PartRule,partActions} from './part-rules.js';
@@ -18,10 +18,10 @@ const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new 
 const initialDate=classDate(params.get('date'))??today;
 for (const id of ['work-date','view-date','print-date']) ui(id).value=initialDate;
 const intro = {
-  make:'바나바와 친구들이 자리 잡은 공원은 모카가든이에요. 좋아하는 일이나 자주 하는 행동을 떠올려 봐요. 그 모습을 몸의 모양과 움직임으로 만들어 봐요.',
-  move:'평소 내 모습을 떠올리며, 만든 몸에 입힐 동작을 3초 동안 녹화해요.',
+  make:'종이 활동지에서 생각한 ‘또 다른 나’를 빚고 색칠해요. 나만의 생김새와 움직임으로 나를 표현해 봐요.',
+  move:'아이패드 앞 카메라로 나를 잘 드러내는 움직임을 3초 동안 녹화해요.',
   ability:'만든 몸의 어느 부분이 언제, 어떻게 움직일지 정해요.',
-  place:'모카가든에서 ‘또 다른 나’를 놓을 자리를 골라요.',
+  place:'처음 고른 자리에 붙일 QR에 작품을 연결하고, 그 자리에서 친구에게 보여 줘요.',
 };
 const labels={make:'형태 편집 중',move:'동작 미리 보기',ability:'기능 미리 보기',place:'또 다른 나'};
 const avatar=createAvatar();
@@ -162,13 +162,13 @@ function stopPreview() {
   mixer?.stopAllAction();
   mixer=null;
   playingClay=false;
-  resetPose(displayAvatar());
+  resetPose(showingExample ? example : displayAvatar());
 }
 
 function preview(clip,speed=1,isClay=false) {
   stopPreview();
   playingClay=isClay;
-  mixer=new THREE.AnimationMixer(displayAvatar().model);
+  mixer=new THREE.AnimationMixer((showingExample ? example : displayAvatar()).model);
   const action=mixer.clipAction(clip);
   action.setLoop(THREE.LoopOnce,1);
   action.timeScale=speed;
@@ -631,6 +631,9 @@ for (const button of document.querySelectorAll('[data-part]')) {
 }
 
 ui('show-example').addEventListener('click',()=>setExample(!showingExample));
+ui('play-example').addEventListener('click',()=>{
+  if (showingExample) preview(exampleDance(example));
+});
 
 const customColor=ui('custom-color');
 customColor.value=palette[1][1];
