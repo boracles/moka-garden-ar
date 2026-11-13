@@ -37,6 +37,7 @@ h1{margin:0;font-size:clamp(28px,3.4vw,45px);line-height:1.12;letter-spacing:-.0
 .stage-toolbar [aria-pressed=true]{background:var(--green);border-color:var(--green);color:white}
 .studio-meta{position:absolute;left:20px;right:20px;bottom:15px;display:flex;align-items:center;justify-content:space-between;gap:10px;pointer-events:none;color:#284539;font-size:12px;font-weight:750}
 .studio-meta span:first-child{background:#fff9;padding:7px 11px;border-radius:50px}
+.clay-fusion-status{position:absolute;left:20px;bottom:49px;margin:0;padding:6px 10px;border-radius:8px;background:#fffe;color:var(--ink);font-size:12px;pointer-events:none}
 .control-panel{background:var(--cream);border:1px solid var(--line);border-radius:16px;padding:20px 18px}
 .panel h2{font-size:clamp(21px,2.4vw,27px);line-height:1.25;letter-spacing:-.06em;margin:0 0 9px}
 .panel>p{font-size:15px;color:var(--muted);line-height:1.65;margin:0 0 22px;word-break:keep-all;overflow-wrap:anywhere}

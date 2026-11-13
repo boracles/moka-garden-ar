@@ -7,6 +7,7 @@ import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
 import {PartRule,partActions} from './part-rules.js';
 import {MarkerAR,classDate,exhibitionWork,markerCount,markerId,saveMarkerWork,showMarker,workLabel} from './marker-ar.js';
+import {clearClayFusion,hasClayFusion,joinClay,showClaySources} from './join-clay.js';
 
 const ui=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
@@ -105,6 +106,7 @@ let brush=null;
 let transientOrbit=null;
 let example=null;
 let showingExample=false;
+const clayFusionJobs=new WeakMap();
 const undoStack=[];
 const motion=new MotionCapture(ui('motion-video'),avatar,{
   status:message=>{ui('motion-status').textContent=message;},
@@ -141,13 +143,14 @@ function closeCamera() {
 }
 
 function updateMotionButtons() {
-  ui('open-camera').disabled=!riggedAvatar || openingCamera || Boolean(motion.recording);
+  const joining=Boolean(clayFusionJobs.get(displayAvatar().model)?.pending);
+  ui('open-camera').disabled=!riggedAvatar || joining || openingCamera || Boolean(motion.recording);
   ui('open-camera').textContent=motion.active ? '앞 카메라 끄기' : '앞 카메라 켜기';
   ui('record').disabled=!motion.active || !motion.seesPose || Boolean(motion.recording);
   ui('replay').disabled=!motionClip || openingCamera || Boolean(motion.recording);
-  ui('download').disabled=!riggedAvatar || openingCamera || motion.active;
+  ui('download').disabled=!riggedAvatar || joining || openingCamera || motion.active;
   ui('rig-edit').disabled=openingCamera || Boolean(motion.recording);
-  ui('start-ar').disabled=!renderer||!markerId(ui('marker-number').value)||!classDate(ui('work-date').value);
+  ui('start-ar').disabled=!renderer||joining||!markerId(ui('marker-number').value)||!classDate(ui('work-date').value);
   ui('view-garden').disabled=!renderer;
 }
 
@@ -201,7 +204,33 @@ function addClayPart(part) {
   if (!avatar.addPart(part)) return;
   rememberEdit({part});
   if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+  updateClayFusion(avatar.model);
   frameModel(displayAvatar().model,false,part==='tail');
+}
+
+function updateClayFusion(model) {
+  const request={pending:true};
+  clayFusionJobs.set(model,request);
+  clearClayFusion(model);
+  const status=ui('clay-fusion-status');
+  status.hidden=avatar.parts.size===0;
+  status.textContent='점토를 부드럽게 잇는 중이에요.';
+  updateMotionButtons();
+  const isCurrent=()=>clayFusionJobs.get(model)===request;
+  request.ready=joinClay(model,isCurrent).then(()=>{
+    if (isCurrent() && model===displayAvatar().model) status.hidden=true;
+  }).catch(error=>{
+    if (!isCurrent()) return;
+    if (model===displayAvatar().model) status.textContent='점토를 잇지 못했어요. 빚기를 계속할 수 있어요.';
+    console.error(error);
+  }).finally(()=>{
+    request.pending=false;
+    if (isCurrent()) updateMotionButtons();
+  });
+}
+
+function waitForClayFusion() {
+  return clayFusionJobs.get(displayAvatar().model)?.ready;
 }
 
 function displayRig() {
@@ -227,8 +256,12 @@ function setRiggedAvatar(next) {
   if (previousModel!==displayAvatar().model) {
     scene.remove(previousModel);
     scene.add(displayAvatar().model);
-    previous?.dispose();
   }
+  if (previous) {
+    clayFusionJobs.delete(previous.model);
+    previous.dispose();
+  }
+  if (next) updateClayFusion(next.model);
   displayRig();
   frameModel(displayAvatar().model);
   updateMotionButtons();
@@ -355,7 +388,9 @@ ui('rig-apply').addEventListener('click',()=>{
   try {
     setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
     ui('motion-status').textContent='뼈대가 연결됐어요. 앞 카메라를 켜서 함께 움직여 봐요.';
-    ui('open-camera').focus();
+    waitForClayFusion()?.then(()=>{
+      if (step==='move' && riggedAvatar && !ui('open-camera').disabled) ui('open-camera').focus();
+    });
   } catch(error) {
     ui('rig-status').textContent=error.message;
   }
@@ -530,6 +565,7 @@ function setStep(value) {
     scene.add(nextModel);
   }
   motion.avatar=displayAvatar();
+  ui('clay-fusion-status').hidden=!clayFusionJobs.get(nextModel)?.pending;
   frameModel(nextModel);
   for (const [id] of Object.entries(intro)) {
     ui('panel-'+id).hidden=id!==value;
@@ -663,6 +699,8 @@ if (renderer) {
       positionCursors([]);
       return;
     }
+    clayFusionJobs.delete(avatar.model);
+    showClaySources(avatar.model,true);
     canvas.setPointerCapture(event.pointerId);
     brush={
       id:event.pointerId,x:event.clientX,y:event.clientY,changes:new Map(),
@@ -695,10 +733,13 @@ if (renderer) {
       orbit.enabled=showingExample||step!=='make';
     }
     if (event.pointerId!==brush?.id) return;
-    if (brush.changes.size) {
+    const changed=brush.changes.size>0;
+    if (changed) {
       rememberEdit({attribute:brush.attribute,changes:brush.changes});
       invalidateBodyRig();
     }
+    if (changed || !hasClayFusion(avatar.model)) updateClayFusion(avatar.model);
+    else showClaySources(avatar.model,false);
     brush=null;
     if (event.pointerType==='touch') positionCursors([]);
   }
@@ -720,6 +761,7 @@ ui('undo').addEventListener('click',()=>{
     for (const [mesh,values] of last.changes) restoreBrushAttribute(mesh,last.attribute,values);
     invalidateBodyRig();
   }
+  updateClayFusion(avatar.model);
   refreshEditor();
 });
 
@@ -785,6 +827,7 @@ function gardenWork() {
 
 async function downloadWork(status,id,date) {
   try {
+    await waitForClayFusion();
     const {model,animations}=gardenWork();
     if (!id && !riggedAvatar && !animations.length) return;
     if (id) {
@@ -872,6 +915,7 @@ ui('extension-settings').addEventListener('toggle',()=>{
 ui('extension-place').addEventListener('change',event=>{
   avatar.positionExtension(event.target.value);
   if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+  updateClayFusion(avatar.model);
   frameModel(displayAvatar().model);
 });
 for (const id of ['use-sound','use-movement']) ui(id).addEventListener('change',updateAbilities);
@@ -893,7 +937,7 @@ function updateMarkerNumber() {
   const id=markerId(input.value);
   const date=classDate(ui('work-date').value);
   ui('save-marker-work').disabled=!id||!date;
-  ui('start-ar').disabled=!renderer||!id||!date;
+  updateMotionButtons();
   input.setAttribute('aria-invalid',String(Boolean(input.value && !id)));
   ui('marker-number-help').textContent=id&&date
     ? workLabel(date,id)+' QR에 연결해요.'

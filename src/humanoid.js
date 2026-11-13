@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {clayAttachments,snapshotModel} from './avatar.js';
 import {bindClayBody,clayBodyName} from './clay-body.js';
+import {clearClayFusion} from './join-clay.js';
 
 const sides=['L','R'];
 const midpoint=(a,b)=>a.clone().lerp(b,.5);
@@ -33,6 +34,7 @@ export function defaultMarkers(avatar) {
 
 export function buildHumanoid(avatar,markers) {
   const source=snapshotModel(avatar);
+  clearClayFusion(source,{dispose:false});
   source.updateMatrixWorld(true);
   const model=new THREE.Group();
   const joints={};
@@ -115,6 +117,7 @@ export function buildHumanoid(avatar,markers) {
   const restHip=joints.Pelvis.position.clone();
   return {model,joints,rest,directions,restHip,height:headTop-min.y,
     dispose() {
+      clearClayFusion(model);
       geometry.dispose();
       body.skeleton.dispose();
       for (const name of ['Moving clay','NosePivot clay','TailPivot clay']) {
