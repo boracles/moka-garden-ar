@@ -193,7 +193,7 @@ function refreshEditor() {
   for (const button of document.querySelectorAll('[data-part]')) {
     button.disabled=avatar.parts.has(button.dataset.part);
   }
-  if (step==='make') ui('stage-label').textContent=showingExample?'완성 예시':avatar.parts.size?'작업 중':'점토 구';
+  if (step==='make') ui('stage-label').textContent=showingExample?'완성 예시':'내 점토 인형';
 }
 
 function addClayPart(part) {
@@ -721,7 +721,7 @@ ui('undo').addEventListener('click',()=>{
   refreshEditor();
 });
 
-ui('rig-preview').addEventListener('click',()=>preview(rigPreview()));
+ui('rig-preview').addEventListener('click',()=>preview(rigPreview(avatar)));
 ui('open-camera').addEventListener('click',async()=>{
   if (motion.active) {
     closeCamera();
@@ -1073,7 +1073,7 @@ function draw(now) {
   requestAnimationFrame(draw);
 }
 requestAnimationFrame(draw);
-frameModel(avatar.model);
+frameModel(avatar.model,true);
 refreshEditor();
 updateMotionButtons();
 updateAbilities();

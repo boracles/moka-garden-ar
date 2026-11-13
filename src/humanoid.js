@@ -145,7 +145,7 @@ export function buildHumanoid(avatar,markers) {
     mesh.bind(skeleton);
   }
 
-  skin('Clay sphere',torso.slice(0,4));
+  skin('Body clay',torso.slice(0,4));
   skin('Head clay',['Neck','Head']);
   for (const side of sides) {
     skin('arms clay '+side,['Clavicle','UpperArm','Forearm','Hand'].map(name=>name+side));

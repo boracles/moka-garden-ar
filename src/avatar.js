@@ -17,6 +17,7 @@ const neighbors = new WeakMap();
 const stone = '#e4ded1';
 const slate = '#365052';
 const gold = '#bc873e';
+const starterArmAngle=.82;
 const earSpread=.68;
 const extensionJoints=['ClayBase','ClayMiddle','ClayTip'];
 const bendAngles=[.10,.66,.92];
@@ -161,10 +162,10 @@ export function createAvatar({example=false}={}) {
   positionEars();
   for (const [side,sign] of [['L',1],['R',-1]]) {
     const arm=joint(spine,'UpperArm'+side,sign*.32,.315,0);
-    arm.rotation.z=sign*.26;
+    arm.rotation.z=sign*(example ? .26 : starterArmAngle);
     joint(arm,'Forearm'+side,0,-.34,0);
     const leg=joint(pelvis,'Thigh'+side,sign*.173,-.135,0);
-    leg.rotation.z=sign*.035;
+    leg.rotation.z=sign*(example ? .035 : .18);
     joint(leg,'Shin'+side,0,-.355,0);
   }
   model.updateMatrixWorld(true);
@@ -212,7 +213,7 @@ export function createAvatar({example=false}={}) {
     if (example || parts.has(kind)) return false;
     const created=[];
     if (kind==='head') {
-      created.push(sculptable(head,'Head clay',volume(.33,.35,.34),[0,.133,0]));
+      created.push(sculptable(head,'Head clay',volume(.28,.32,.255),[0,.105,0]));
     } else if (kind==='ears') {
       for (const ear of ears) {
         created.push(sculptable(ear,ear.name+' clay',volume(.115,.205,.073),[0,.135,0]));
@@ -262,7 +263,8 @@ export function createAvatar({example=false}={}) {
   }
 
   if (!example) {
-    sculptable(spine,'Clay sphere',volume(.505,.505,.505),[0,0,0]);
+    sculptable(spine,'Body clay',volume(.39,.54,.25),[0,-.045,0]);
+    for (const part of ['head','arms','legs']) addPart(part);
   } else {
     const body=volume(.385,.615,.302);
     const v=body.getAttribute('position');
@@ -469,18 +471,20 @@ export function snapshotModel(avatar) {
   return model;
 }
 
-export function rigPreview() {
+export function rigPreview(avatar) {
   const times=[0,.48,.96,1.5];
   const euler=new THREE.Euler();
   const rotation=new THREE.Quaternion();
+  const offset=new THREE.Quaternion();
   function track(name,angles) {
-    const values=angles.flatMap(values=>rotation.setFromEuler(euler.set(...values)).toArray());
+    const values=angles.flatMap(values=>rotation.copy(avatar.rest[name])
+      .multiply(offset.setFromEuler(euler.set(...values))).toArray());
     return new THREE.QuaternionKeyframeTrack(name+'.quaternion',times,values);
   }
   return new THREE.AnimationClip('Rig preview',1.5,[
     track('Head',[[0,0,0],[0,-.12,.19],[0,.08,-.16],[0,0,0]]),
     track('Spine',[[0,0,0],[.05,0,.13],[0,0,-.08],[0,0,0]]),
-    track('UpperArmL',[[0,0,.26],[0,0,1.12],[0,0,1.02],[0,0,.26]]),
+    track('UpperArmL',[[0,0,0],[0,0,.52],[0,0,.42],[0,0,0]]),
     track('ForearmL',[[0,0,0],[-.22,0,.60],[-.20,0,.32],[0,0,0]]),
   ]);
 }
