@@ -5,13 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f3eb">
   <link rel="icon" href="data:,">
-  <title>모카가든 수호대, 출동하라!</title>
-  <script type="module" crossorigin src="./assets/index-DcmH7pJ7.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-Cym8J9GH.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=Montserrat:wght@300;400;500;600&display=swap">
+  <title>내 안의 이상한 친구와 모카가든에 놀러 오세요</title>
+  <script type="module" crossorigin src="./assets/index-D5OXdESn.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-CrrTuU9x.css">
 </head>
 <body>
   <header class="masthead">
-    <div class="wordmark">모카가든 수호대 AR 워크숍</div>
+    <div class="wordmark"><span class="logo-blob" aria-hidden="true"></span>모카가든 AR 워크숍</div>
     <nav aria-label="워크숍 단계" class="steps">
       <button type="button" data-step="make" aria-current="step"><span>1</span> 형태 빚기</button>
       <button type="button" data-step="move"><span>2</span> 동작 녹화</button>
@@ -26,8 +29,12 @@
 
   <main>
     <div class="intro">
-      <div><p class="kicker">수호신이 SOS를 보냈어요</p><h1>모카가든 수호대, 출동하라!</h1></div>
-      <p id="intro-copy">외계 생명체가 찾아온 모카가든, 수호신들은 자리를 떠날 수 없어요. 내 장점을 몸의 모양과 움직임으로 만들어 수호신이 못 하는 일을 도와요.</p>
+      <div class="hero-art" aria-hidden="true">
+        <span class="blob blob-a"></span><span class="blob blob-b"></span><span class="blob blob-c"></span>
+        <span class="hero-outline">Moka Garden</span>
+      </div>
+      <div class="hero-title"><p class="kicker">내 안의 이상한 친구와</p><h1>모카가든에 놀러 오세요</h1></div>
+      <p id="intro-copy">모카가든에서 새 정원사를 찾고 있어요. 조건은 하나, 나만의 특별한 점! 내 특별한 점을 닮은 식물을 몸의 모양과 움직임으로 만들어 봐요.</p>
     </div>
 
     <div class="workspace sculpt-mode" id="workspace">
@@ -83,6 +90,10 @@
                 <button type="button" data-part="extension" class="secondary">＋ 자유 점토</button>
               </div>
             </fieldset>
+            <div id="ear-shape-setting" class="ability-options">
+              <label for="ear-shape">귀 모양</label>
+              <select id="ear-shape"><option value="fan">부채 귀</option><option value="long">긴 토끼 귀</option><option value="pointy">뾰족 고양이 귀</option><option value="round">동그란 곰 귀</option><option value="droopy">축 늘어진 강아지 귀</option></select>
+            </div>
             <div id="extension-place-setting" class="ability-options" hidden>
               <label for="extension-place">자유 점토를 붙일 자리</label>
               <select id="extension-place"><option value="top">위</option><option value="front">앞</option><option value="side">옆</option><option value="back">뒤</option></select>
@@ -198,7 +209,7 @@
         </section>
 
         <section id="panel-place" class="panel" hidden>
-          <h2>‘또 다른 나’를 놓을 자리</h2>
+          <h2>내 식물을 키울 곳</h2>
           <p>받은 QR 번호로 작품을 등록하고, QR에서 움직임을 확인해요. 작품을 확정하면 같은 QR로 관객도 볼 수 있어요.</p>
           <div class="marker-controls">
             <label for="work-date">수업 날짜</label>
@@ -223,7 +234,7 @@
     </div>
   </main>
 
-  <footer><span>또 다른 나를 만드는 AR 워크숍</span></footer>
+  <footer><span>내 안의 이상한 친구와 모카가든에 놀러 오세요</span></footer>
 
   <section id="public-viewer" class="public-viewer" hidden>
     <p class="kicker">모카가든 워크숍</p>
