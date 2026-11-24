@@ -423,7 +423,7 @@ export function createSeed(type,palette=[new THREE.Color('#c08a4a'),new THREE.Co
       break;
     }
     case 2: { // acorn
-      const nut=lathe(Array.from({length:20},(_,i)=>{ const t=i/19; return [Math.sin(Math.PI*(.5+.5*t))*.38*(t<.2?1:1),-.7+t*.95]; }),36);
+      const nut=lathe(Array.from({length:20},(_,i)=>{ const t=i/19; return [Math.pow(Math.sin(Math.PI*.5*t),.7)*.38,-.7+t*.95]; }),36);
       add(vertexColors(nut,(p,c)=>c.copy(brown).lerp(cream,.2*Math.max(0,-p.y))),glossy);
       const cap=new THREE.SphereGeometry(.42,36,16,0,TAU,0,Math.PI/2);
       const pos=cap.getAttribute('position');
