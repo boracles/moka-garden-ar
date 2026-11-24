@@ -110,6 +110,45 @@ function fanEarGeometry(side) {
   return geometry;
 }
 
+function shapedEar(side,map,turn) {
+  const geometry=volume(1,1,1);
+  const positions=geometry.getAttribute('position');
+  for (let index=0;index<positions.count;index++) {
+    const [x,y,z]=map(positions.getX(index),positions.getY(index),positions.getZ(index),(positions.getY(index)+1)*.5);
+    positions.setXYZ(index,side*x,y,z);
+  }
+  if (side<0) {
+    const indices=geometry.index.array;
+    for (let i=0;i<indices.length;i+=3) [indices[i+1],indices[i+2]]=[indices[i+2],indices[i+1]];
+  }
+  geometry.rotateZ(-side*turn);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+export const earShapes={fan:'부채 귀',long:'긴 토끼 귀',pointy:'뾰족 고양이 귀',round:'동그란 곰 귀',droopy:'축 늘어진 강아지 귀'};
+
+function earGeometry(shape,side) {
+  switch (shape) {
+    case 'long': return shapedEar(side,(x,y,z,p)=>{
+      const width=.048+.07*Math.sin(Math.PI*Math.pow(p,.8));
+      return [x*width,.64*p-.06,z*.048+.022*(1-x*x)*p];
+    },-.45);
+    case 'pointy': return shapedEar(side,(x,y,z,p)=>{
+      const width=.22*(1-p)+.016;
+      return [x*width,.44*p-.06,z*(.075*(1-p)+.022)+.02*p];
+    },-.22);
+    case 'round': return shapedEar(side,(x,y,z)=>[x*.19,y*.19+.15,z*.06],-.25);
+    case 'droopy': return shapedEar(side,(x,y,z,p)=>{
+      const width=.065+.07*Math.sin(Math.PI*p);
+      return [x*width+.1+.12*p,-.6*p+.12,z*.05+.05*p];
+    },-.95);
+    default: return fanEarGeometry(side);
+  }
+}
+
 function writeSkin(geometry,weightsForHeight) {
   const position=geometry.getAttribute('position');
   const weights=new Float32Array(position.count*4);
@@ -280,13 +319,13 @@ export function createAvatar({example=false}={}) {
     return mesh;
   }
 
-  function addPart(kind) {
+  function addPart(kind,{shape='fan'}={}) {
     if (example || parts.has(kind)) return false;
     const created=[];
     if (kind==='ears') {
       for (const [index,ear] of ears.entries()) {
         const side=index===0?1:-1;
-        created.push(sculptable(ear,ear.name+' clay',fanEarGeometry(side),[0,0,0]));
+        created.push(sculptable(ear,ear.name+' clay',earGeometry(shape,side),[0,0,0]));
       }
     } else if (bendableParts.includes(kind)) {
       created.push(movingClay(kind));

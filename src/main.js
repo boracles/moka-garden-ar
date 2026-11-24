@@ -18,12 +18,12 @@ const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new 
 const initialDate=classDate(params.get('date'))??today;
 for (const id of ['work-date','view-date','print-date']) ui(id).value=initialDate;
 const intro = {
-  make:'외계 생명체가 찾아온 모카가든, 수호신들은 자리를 떠날 수 없어요. 내 장점을 몸의 모양과 움직임으로 만들어 수호신이 못 하는 일을 도와요.',
-  move:'내 장점이 잘 드러나는 동작을 떠올려, 만든 몸에 입힐 동작을 3초 동안 녹화해요.',
+  make:'모카가든에서 새 정원사를 찾고 있어요. 조건은 하나, 나만의 특별한 점! 내 특별한 점을 닮은 식물을 몸의 모양과 움직임으로 만들어 봐요.',
+  move:'정원사 오디션에서 보여 줄, 나만의 특별한 점이 드러나는 몸짓을 3초 동안 녹화해요.',
   ability:'만든 몸의 어느 부분이 언제, 어떻게 움직일지 정해요.',
-  place:'수호신 곁에서 ‘또 다른 나’가 지킬 자리를 골라요.',
+  place:'정원 속 내 식물을 키울 곳에 QR을 놓고, 비밀 렌즈(AR)로 비춰요.',
 };
-const labels={make:'형태 편집 중',move:'동작 미리 보기',ability:'기능 미리 보기',place:'또 다른 나'};
+const labels={make:'형태 편집 중',move:'동작 미리 보기',ability:'기능 미리 보기',place:'내 식물'};
 const avatar=createAvatar();
 const scene=new THREE.Scene();
 scene.add(avatar.model);
@@ -57,7 +57,7 @@ const key=new THREE.DirectionalLight(0xfff4d4,3.1);
 key.position.set(-3,6,4);
 const rim=new THREE.DirectionalLight(0xe1fff0,2.05);
 rim.position.set(3,4,-4);
-scene.add(key,rim,new THREE.HemisphereLight(0xfff7e5,0x829e8b,2.12));
+scene.add(key,rim,new THREE.HemisphereLight(0xfff7f0,0x8fa3bd,2.12));
 const orbit=renderer ? new OrbitControls(camera,renderer.domElement) : null;
 if (orbit) {
   orbit.target.set(0,1.28,0);
@@ -205,7 +205,7 @@ function refreshEditor() {
 
 function addClayPart(part) {
   stopPreview();
-  if (!avatar.addPart(part)) return;
+  if (!avatar.addPart(part,{shape:ui('ear-shape').value})) return;
   rememberEdit({part});
   if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
   updateClayFusion(avatar.model);
@@ -635,6 +635,16 @@ for (const button of document.querySelectorAll('[data-tool]')) {
 }
 ui('brush-shape').addEventListener('change',updateBrushHint);
 
+ui('ear-shape').addEventListener('change',()=>{
+  if (!avatar.parts.has('ears')) return;
+  stopPreview();
+  invalidateRegistration();
+  avatar.removePart('ears');
+  avatar.addPart('ears',{shape:ui('ear-shape').value});
+  if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+  updateClayFusion(avatar.model);
+  frameModel(displayAvatar().model);
+});
 for (const button of document.querySelectorAll('[data-part]')) {
   button.addEventListener('click',()=>addClayPart(button.dataset.part));
 }
