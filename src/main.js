@@ -2,6 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
+import {plantGenes,createPlant} from './plant.js';
 import {applyBrush,bendableParts,clayPartLabels,createAvatar,extensionClip,palette,partReaction,reflectedBrush,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
 import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
@@ -178,8 +179,11 @@ function preview(clip,speed=1,isClay=false) {
 
 function frameModel(model,front=false,rear=false) {
   if (!orbit) return;
-  model.updateMatrixWorld(true);
-  const bounds=new THREE.Box3().setFromObject(model);
+  const bounds=new THREE.Box3();
+  for (const item of [].concat(model)) {
+    item.updateMatrixWorld(true);
+    bounds.expandByObject(item);
+  }
   if (bounds.isEmpty()) return;
   const center=bounds.getCenter(new THREE.Vector3());
   const size=bounds.getSize(new THREE.Vector3());
@@ -550,6 +554,26 @@ function setExample(visible) {
   frameModel(visible?example.model:avatar.model);
 }
 
+let gardenPlant=null;
+let plantStarted=0;
+function showGardenPlant(show) {
+  if (gardenPlant) {
+    scene.remove(gardenPlant.group);
+    gardenPlant=null;
+  }
+  if (!show) return;
+  const model=displayAvatar().model;
+  model.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(model);
+  const size=bounds.getSize(new THREE.Vector3());
+  gardenPlant=createPlant(plantGenes(model),{height:size.y});
+  gardenPlant.group.position.set(bounds.max.x+size.y*.32,bounds.min.y,bounds.getCenter(new THREE.Vector3()).z);
+  scene.add(gardenPlant.group);
+  gardenPlant.setGrowth(0);
+  plantStarted=performance.now();
+  frameModel([model,gardenPlant.group],true);
+}
+
 function setStep(value) {
   if (!intro[value] || step===value) return;
   if (showingExample) setExample(false);
@@ -590,6 +614,7 @@ function setStep(value) {
   if (step==='place') {
     updateMarkerNumber();
   }
+  showGardenPlant(step==='place');
   if (step==='move') startRigPlacement();
   ui('ability-status').hidden=true;
   refreshEditor();
@@ -1274,6 +1299,11 @@ function draw(now) {
       }
       previewRule?.update(elapsed);
     }
+    if (gardenPlant) {
+      const seconds=(now-plantStarted)/1000;
+      gardenPlant.setGrowth(seconds/3.2);
+      gardenPlant.update(seconds);
+    }
     orbit.update();
     if (!rigOverlay.hidden) {
       camera.updateMatrixWorld();
@@ -1290,4 +1320,3 @@ updateMotionButtons();
 updateAbilities();
 if (publicMode) openPublicViewer();
 else if (params.get('qr')==='1') openMarkerPrint();
-

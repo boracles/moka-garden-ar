@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import jsQR from 'jsqr';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {plantGenes,createPlant} from './plant.js';
 import {PartRule,partActions} from './part-rules.js';
 
 const markerPattern=/^moka-garden-(?:0[1-9]|[1-9]\d)$/;
@@ -259,6 +260,13 @@ export class MarkerAR {
     model.scale.multiplyScalar(size);
     model.position.set(-center.x*size,-bounds.min.y*size,-center.z*size);
     this.anchor.add(model);
+    model.updateMatrixWorld(true);
+    const placed=new THREE.Box3().setFromObject(model);
+    this.plant=createPlant(plantGenes(model),{height:1.65});
+    this.plant.group.position.set(placed.max.x+.5,0,0);
+    this.plant.setGrowth(0);
+    this.plantStarted=null;
+    this.anchor.add(this.plant.group);
     this.settings=settings;
     const movement=animations.find(clip=>clip.name===settings.motion);
     this.body=movement?new THREE.AnimationMixer(model):null;
@@ -407,6 +415,12 @@ export class MarkerAR {
       }
       this.rule?.clearPose();
       if (this.anchor.visible) {
+        if (this.plant) {
+          this.plantStarted??=now;
+          const seconds=(now-this.plantStarted)/1000;
+          this.plant.setGrowth(seconds/3.2);
+          this.plant.update(seconds);
+        }
         this.body?.update(elapsed);
         const wasActive=this.rule?.active;
         this.rule?.update(elapsed);
