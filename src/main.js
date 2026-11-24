@@ -23,7 +23,7 @@ const intro = {
   ability:'만든 몸의 어느 부분이 언제, 어떻게 움직일지 정해요.',
   place:'정원 속 내 식물을 키울 곳에 QR을 놓고, 비밀 렌즈(AR)로 비춰요.',
 };
-const labels={make:'형태 편집 중',move:'동작 미리 보기',ability:'기능 미리 보기',place:'내 식물'};
+const labels={make:'형태 편집 중',move:'동작 미리 보기',ability:'기능 미리 보기',place:'내 친구'};
 const avatar=createAvatar();
 const scene=new THREE.Scene();
 scene.add(avatar.model);
