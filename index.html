@@ -8,9 +8,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=Montserrat:wght@300;400;500;600&display=swap">
-  <title>저마다의 나다움 · 또 다른 나를 만드는 AR 워크숍</title>
-  <script type="module" crossorigin src="./assets/index-8iyThv61.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-CrrTuU9x.css">
+  <title>또 다른 나 · 나다움을 찾아 AR로 띄우는 워크숍</title>
+  <script type="module" crossorigin src="./assets/index-bmjNRf38.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BEGlFdh1.css">
 </head>
 <body>
   <header class="masthead">
@@ -33,7 +33,7 @@
         <span class="blob blob-a"></span><span class="blob blob-b"></span><span class="blob blob-c"></span>
         <span class="hero-outline">Another Me</span>
       </div>
-      <div class="hero-title"><p class="kicker">또 다른 나를 만드는 AR 워크숍</p><h1>저마다의 나다움</h1></div>
+      <div class="hero-title"><p class="kicker">나다움을 찾아 AR로 띄우는 워크숍</p><h1>또 다른 나</h1></div>
       <p id="intro-copy">나를 나답게 하는 모습은 뭘까요? 내 특징과 성격을 몸의 모양에 담아 ‘또 다른 나’를 만들어 봐요.</p>
     </div>
 
@@ -43,6 +43,7 @@
         <button type="button" data-tool="grab" aria-pressed="false"><span aria-hidden="true">↔</span>잡아당기기</button>
         <button type="button" data-tool="smooth" aria-pressed="false"><span aria-hidden="true">≈</span>다듬기</button>
         <button type="button" data-tool="paint" aria-pressed="false"><span aria-hidden="true">●</span>칠하기</button>
+        <button type="button" data-tool="fill" aria-pressed="false"><span aria-hidden="true">◐</span>통째로 칠하기</button>
       </aside>
       <section class="studio" aria-label="캐릭터 미리 보기">
         <div id="viewport" class="viewport" aria-label="편집할 3D 캐릭터"></div>
@@ -78,22 +79,41 @@
               <legend>색</legend>
               <div id="colors" class="colors" role="group" aria-label="기본 색"></div>
               <label class="custom-paint">직접 고르기 <input type="color" id="custom-color"></label>
+              <div class="finish-setting"><label for="finish">질감</label>
+                <select id="finish"><option value="clay">도자기</option><option value="glossy">반들반들</option><option value="pearl">무지개 펄</option><option value="velvet">보송보송</option></select>
+              </div>
             </fieldset>
             <fieldset>
               <legend>점토 붙이기</legend>
               <div class="part-grid">
-                <button type="button" data-part="ears" class="secondary">＋ 귀</button>
+                <button type="button" data-part="ears" class="secondary">＋ 귀·더듬이</button>
                 <button type="button" data-part="nose" class="secondary">＋ 코</button>
                 <button type="button" data-part="tail" class="secondary">＋ 꼬리</button>
                 <button type="button" data-part="hands" class="secondary">＋ 손</button>
                 <button type="button" data-part="feet" class="secondary">＋ 발</button>
+                <button type="button" data-part="extraLegs" class="secondary">＋ 다리 두 개</button>
                 <button type="button" data-part="extension" class="secondary">＋ 자유 점토</button>
               </div>
             </fieldset>
-            <div id="ear-shape-setting" class="ability-options">
-              <label for="ear-shape">귀 모양</label>
-              <select id="ear-shape"><option value="fan">부채 귀</option><option value="long">긴 토끼 귀</option><option value="pointy">뾰족 고양이 귀</option><option value="round">동그란 곰 귀</option><option value="droopy">축 늘어진 강아지 귀</option></select>
-            </div>
+            <fieldset class="part-settings" id="ear-shape-setting">
+              <legend>붙일 점토 모양과 크기</legend>
+              <label for="ear-shape">귀</label>
+              <select id="ear-shape"><option value="fan">부채 귀</option><option value="long">긴 토끼 귀</option><option value="pointy">뾰족 고양이 귀</option><option value="round">동그란 곰 귀</option><option value="droopy">축 늘어진 강아지 귀</option><option value="wing">날개 귀</option><option value="bud">꽃봉오리 귀</option><option value="antenna">동글 더듬이</option><option value="horn">뿔</option></select>
+              <select id="ear-size" aria-label="크기"><option value="1">보통</option><option value="1.6">크게</option><option value="2.6">왕창 크게</option></select>
+              <label for="hand-shape">손</label>
+              <select id="hand-shape"><option value="round">동그란 손</option><option value="paddle">넓적한 손</option><option value="taper">뾰족한 손</option></select>
+              <select id="hand-size" aria-label="크기"><option value="1">보통</option><option value="1.6">크게</option><option value="2.6">왕창 크게</option></select>
+              <label for="foot-shape">발</label>
+              <select id="foot-shape"><option value="round">동그란 발</option><option value="flat">넓적한 발</option><option value="duck">오리발</option></select>
+              <select id="foot-size" aria-label="크기"><option value="1">보통</option><option value="1.6">크게</option><option value="2.6">왕창 크게</option></select>
+              <label for="tail-size">꼬리</label>
+              <span class="part-settings-note">길게 휘는 꼬리</span>
+              <select id="tail-size" aria-label="크기"><option value="1">보통</option><option value="1.6">크게</option><option value="2.6">왕창 크게</option></select>
+              <label for="nose-size">코</label>
+              <span class="part-settings-note">길게 휘는 코</span>
+              <select id="nose-size" aria-label="크기"><option value="1">보통</option><option value="1.6">크게</option><option value="2.6">왕창 크게</option></select>
+              <p class="part-settings-hint">붙인 뒤에 바꿔도 바로 바뀌어요.</p>
+            </fieldset>
             <div id="extension-place-setting" class="ability-options" hidden>
               <label for="extension-place">자유 점토를 붙일 자리</label>
               <select id="extension-place"><option value="top">위</option><option value="front">앞</option><option value="side">옆</option><option value="back">뒤</option></select>
@@ -234,7 +254,7 @@
     </div>
   </main>
 
-  <footer><span>저마다의 나다움 · 또 다른 나를 만드는 AR 워크숍</span></footer>
+  <footer><span>또 다른 나 · 나다움을 찾아 AR로 띄우는 워크숍</span></footer>
 
   <section id="public-viewer" class="public-viewer" hidden>
     <p class="kicker">또 다른 나 워크숍</p>
@@ -277,7 +297,7 @@
   <section id="ar-overlay" class="ar-overlay" aria-label="AR 배치" hidden>
     <video id="ar-video" autoplay muted playsinline aria-label="가든 표식 카메라"></video>
     <canvas id="ar-canvas" aria-label="표식에 나타난 캐릭터"></canvas>
-    <div class="ar-top"><button type="button" id="close-ar">편집으로 돌아가기</button><p id="ar-status" aria-live="polite"></p></div>
+    <div class="ar-top"><button type="button" id="close-ar">편집으로 돌아가기</button><button type="button" id="ar-photo">AR 사진 찍기</button><p id="ar-status" aria-live="polite"></p></div>
     <ul id="ar-test-checks" class="ar-test-checks" aria-label="QR 테스트 진행 상황" aria-live="polite" hidden>
       <li id="ar-test-motion"></li>
       <li id="ar-test-rule"></li>
