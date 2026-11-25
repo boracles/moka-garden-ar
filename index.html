@@ -8,18 +8,18 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=Montserrat:wght@300;400;500;600&display=swap">
-  <title>내 안의 이상한 친구와 모카가든에 놀러 오세요</title>
-  <script type="module" crossorigin src="./assets/index-xuVf0WW1.js"></script>
+  <title>저마다의 나다움 · 또 다른 나를 만드는 AR 워크숍</title>
+  <script type="module" crossorigin src="./assets/index-8iyThv61.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-CrrTuU9x.css">
 </head>
 <body>
   <header class="masthead">
-    <div class="wordmark"><span class="logo-blob" aria-hidden="true"></span>모카가든 AR 워크숍</div>
+    <div class="wordmark"><span class="logo-blob" aria-hidden="true"></span>또 다른 나 AR 워크숍</div>
     <nav aria-label="워크숍 단계" class="steps">
       <button type="button" data-step="make" aria-current="step"><span>1</span> 형태 빚기</button>
       <button type="button" data-step="move"><span>2</span> 동작 녹화</button>
       <button type="button" data-step="ability"><span>3</span> 기능 붙이기</button>
-      <button type="button" data-step="place"><span>4</span> 정원에 놓기</button>
+      <button type="button" data-step="place"><span>4</span> AR로 띄우기</button>
     </nav>
     <div class="garden-tools">
       <button type="button" id="view-garden" class="secondary">지난 작품 보기</button>
@@ -31,10 +31,10 @@
     <div class="intro">
       <div class="hero-art" aria-hidden="true">
         <span class="blob blob-a"></span><span class="blob blob-b"></span><span class="blob blob-c"></span>
-        <span class="hero-outline">Moka Garden</span>
+        <span class="hero-outline">Another Me</span>
       </div>
-      <div class="hero-title"><p class="kicker">내 안의 이상한 친구와</p><h1>모카가든에 놀러 오세요</h1></div>
-      <p id="intro-copy">모카가든에서 새 정원사를 찾고 있어요. 조건은 하나, 나만의 특별한 점! 내 특별한 점을 닮은 식물을 몸의 모양과 움직임으로 만들어 봐요.</p>
+      <div class="hero-title"><p class="kicker">또 다른 나를 만드는 AR 워크숍</p><h1>저마다의 나다움</h1></div>
+      <p id="intro-copy">나를 나답게 하는 모습은 뭘까요? 내 특징과 성격을 몸의 모양에 담아 ‘또 다른 나’를 만들어 봐요.</p>
     </div>
 
     <div class="workspace sculpt-mode" id="workspace">
@@ -142,7 +142,7 @@
 
         <section id="panel-ability" class="panel" hidden>
           <h2>어떻게 움직일까?</h2>
-          <p>나만의 특별한 점이 언제, 어떻게 드러날까요? 화면을 누르면 귀를 파닥이거나 손을 흔드는 것처럼, 내 친구다운 반응을 붙여 봐요.</p>
+          <p>나만의 특별한 점이 언제, 어떻게 드러날까요? 화면을 누르면 귀를 파닥이거나 손을 흔드는 것처럼, 나다운 반응을 붙여 봐요.</p>
           <div class="abilities">
             <fieldset class="ability-card rule-card">
               <legend>몸의 움직임 정하기</legend>
@@ -205,11 +205,11 @@
             </fieldset>
           </div>
           <p id="ability-status" class="ability-status" role="status" hidden></p>
-          <button type="button" data-step="place" class="primary bottom-action">정원에 놓기로</button>
+          <button type="button" data-step="place" class="primary bottom-action">AR로 띄우기로</button>
         </section>
 
         <section id="panel-place" class="panel" hidden>
-          <h2>내 식물을 키울 곳</h2>
+          <h2>‘또 다른 나’를 띄울 곳</h2>
           <p>받은 QR 번호로 작품을 등록하고, QR에서 움직임을 확인해요. 작품을 확정하면 같은 QR로 관객도 볼 수 있어요.</p>
           <div class="marker-controls">
             <label for="work-date">수업 날짜</label>
@@ -234,10 +234,10 @@
     </div>
   </main>
 
-  <footer><span>내 안의 이상한 친구와 모카가든에 놀러 오세요</span></footer>
+  <footer><span>저마다의 나다움 · 또 다른 나를 만드는 AR 워크숍</span></footer>
 
   <section id="public-viewer" class="public-viewer" hidden>
-    <p class="kicker">모카가든 워크숍</p>
+    <p class="kicker">또 다른 나 워크숍</p>
     <h1 id="public-viewer-title">가든 작품 보기</h1>
     <p id="public-viewer-status" role="status"></p>
     <button type="button" id="public-start" class="primary" hidden>카메라 켜고 작품 보기</button>
@@ -246,8 +246,8 @@
   <dialog id="marker-print" aria-labelledby="marker-print-title">
     <div class="marker-print-header">
       <div>
-        <h2 id="marker-print-title">모카가든 QR 01–10</h2>
-        <p>미리 인쇄해 한 장씩 나눠 주세요. 학생은 ‘정원에 놓기’에서 받은 번호를 입력해요.</p>
+        <h2 id="marker-print-title">또 다른 나 QR 01–10</h2>
+        <p>미리 인쇄해 한 장씩 나눠 주세요. 학생은 ‘AR로 띄우기’에서 받은 번호를 입력해요.</p>
         <label for="print-date">QR을 만들 수업 날짜</label>
         <input type="date" id="print-date" required>
       </div>
@@ -274,7 +274,7 @@
     </form>
   </dialog>
 
-  <section id="ar-overlay" class="ar-overlay" aria-label="정원에서 AR 배치" hidden>
+  <section id="ar-overlay" class="ar-overlay" aria-label="AR 배치" hidden>
     <video id="ar-video" autoplay muted playsinline aria-label="가든 표식 카메라"></video>
     <canvas id="ar-canvas" aria-label="표식에 나타난 캐릭터"></canvas>
     <div class="ar-top"><button type="button" id="close-ar">편집으로 돌아가기</button><p id="ar-status" aria-live="polite"></p></div>
