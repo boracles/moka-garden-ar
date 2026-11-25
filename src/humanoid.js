@@ -106,6 +106,20 @@ export function buildHumanoid(avatar,markers) {
   const geometry=original.geometry.clone().applyMatrix4(original.matrixWorld);
   const body=bindClayBody(geometry,original.material,model,joints,segments);
 
+  const extraLegs=sides.flatMap(side=>{
+    const originalLeg=source.getObjectByName('Extra leg '+side);
+    if (!originalLeg) return [];
+    const legGeometry=originalLeg.geometry.clone().applyMatrix4(originalLeg.matrixWorld);
+    const leg=new THREE.SkinnedMesh(legGeometry,originalLeg.material);
+    leg.name=originalLeg.name;
+    leg.frustumCulled=false;
+    leg.castShadow=true;
+    model.add(leg);
+    leg.updateMatrixWorld(true);
+    leg.bind(new THREE.Skeleton([joints['Thigh'+side],joints['Shin'+side]]));
+    return [leg];
+  });
+
   const attachments={...clayAttachments,ExtensionPivot:source.getObjectByName('ExtensionPivot').parent.name};
   for (const [name,parent] of Object.entries(attachments)) {
     const part=source.getObjectByName(name);
@@ -120,6 +134,10 @@ export function buildHumanoid(avatar,markers) {
       clearClayFusion(model);
       geometry.dispose();
       body.skeleton.dispose();
+      for (const leg of extraLegs) {
+        leg.geometry.dispose();
+        leg.skeleton.dispose();
+      }
       for (const name of ['Moving clay','NosePivot clay','TailPivot clay']) {
         model.getObjectByName(name)?.skeleton.dispose();
       }

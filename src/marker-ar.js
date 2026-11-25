@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import jsQR from 'jsqr';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {PartRule,partActions} from './part-rules.js';
+import {softEnvironment} from './environment.js';
 
 const markerPattern=/^moka-garden-(?:0[1-9]|[1-9]\d)$/;
 const scannedCorners=['topLeftCorner','topRightCorner','bottomRightCorner','bottomLeftCorner'];
@@ -216,6 +217,7 @@ export class MarkerAR {
       this.renderer??=new THREE.WebGLRenderer({canvas:this.canvas,alpha:true,antialias:true});
       this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
       this.scene=new THREE.Scene();
+      softEnvironment(this.scene,this.renderer);
       this.scene.add(new THREE.HemisphereLight(0xffffff,0xb0c5ad,2.4));
       const light=new THREE.DirectionalLight(0xffedd8,2.1);
       light.position.set(-4,6,4);
@@ -416,6 +418,23 @@ export class MarkerAR {
       if (this.anchor.visible) this.reportTest();
     }
     this.raf=requestAnimationFrame(this.frame);
+  }
+
+  // The WebGL buffer is read in the same task it is drawn, so no preserved buffer is needed.
+  capture() {
+    const {video,canvas}=this;
+    if (!this.renderer || !this.scene || !video.videoWidth) return Promise.resolve(null);
+    const output=document.createElement('canvas');
+    output.width=canvas.width;
+    output.height=canvas.height;
+    const context=output.getContext('2d');
+    const scale=Math.max(output.width/video.videoWidth,output.height/video.videoHeight);
+    const width=video.videoWidth*scale;
+    const height=video.videoHeight*scale;
+    context.drawImage(video,(output.width-width)/2,(output.height-height)/2,width,height);
+    this.renderer.render(this.scene,this.camera);
+    context.drawImage(canvas,0,0,output.width,output.height);
+    return new Promise(resolve=>output.toBlob(resolve,'image/png'));
   }
 
   touch(event) {

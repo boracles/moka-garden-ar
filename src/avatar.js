@@ -21,9 +21,30 @@ export const palette = [
   ['보라', '#9470be'],
   ['갈색', '#805643'],
   ['흰색', '#fff8ea'],
+  ['연보라', '#c9b6f2'],
+  ['라벤더', '#7b6cf6'],
+  ['자홍', '#d94fa6'],
+  ['복숭아', '#ffb38a'],
+  ['레몬', '#fff27a'],
+  ['청록', '#1fa3a3'],
 ];
 
-const ceramic = new THREE.MeshStandardMaterial({vertexColors:true,roughness:.48});
+export const finishes={
+  clay:{label:'도자기',roughness:.48,clearcoat:0,clearcoatRoughness:0,iridescence:0,sheen:0},
+  glossy:{label:'반들반들',roughness:.2,clearcoat:1,clearcoatRoughness:.06,iridescence:0,sheen:0},
+  pearl:{label:'무지개 펄',roughness:.28,clearcoat:.85,clearcoatRoughness:.1,iridescence:1,sheen:0},
+  velvet:{label:'보송보송',roughness:.9,clearcoat:0,clearcoatRoughness:0,iridescence:0,sheen:1},
+};
+
+const ceramic = new THREE.MeshPhysicalMaterial({vertexColors:true,roughness:.48,
+  iridescenceIOR:1.55,iridescenceThicknessRange:[180,720],sheenColor:new THREE.Color('#ffffff'),sheenRoughness:.45});
+
+export function setFinish(name) {
+  const {label,...values}=finishes[name]??finishes.clay;
+  Object.assign(ceramic,values);
+  ceramic.userData.finish=finishes[name]?name:'clay';
+  ceramic.needsUpdate=true;
+}
 const brass = new THREE.MeshStandardMaterial({vertexColors:true,roughness:.34,metalness:.28});
 const neighbors = new WeakMap();
 
@@ -128,10 +149,28 @@ function shapedEar(side,map,turn) {
   return geometry;
 }
 
-export const earShapes={fan:'부채 귀',long:'긴 토끼 귀',pointy:'뾰족 고양이 귀',round:'동그란 곰 귀',droopy:'축 늘어진 강아지 귀'};
+export const earShapes={fan:'부채 귀',long:'긴 토끼 귀',pointy:'뾰족 고양이 귀',round:'동그란 곰 귀',droopy:'축 늘어진 강아지 귀',wing:'날개 귀',bud:'꽃봉오리 귀',antenna:'동글 더듬이',horn:'뿔'};
 
 function earGeometry(shape,side) {
   switch (shape) {
+    case 'wing': return shapedEar(side,(x,y,z,p)=>{
+      const tips=.75+.25*Math.cos(p*Math.PI*5);
+      return [x*(.18-.09*p)*tips+.24*p,.46*p-.03,z*.055];
+    },-.48);
+    case 'bud': return shapedEar(side,(x,y,z,p)=>{
+      const width=.19*Math.sin(Math.PI*p)**.65+.018;
+      return [x*width-.12*p,.45*p-.04,z*.072];
+    },-.12);
+    case 'antenna': return shapedEar(side,(x,y,z,p)=>{
+      // A thin stalk that swells into a round bead at the tip.
+      const bead=Math.sqrt(Math.max(0,1-((p-.82)/.18)**2));
+      const width=p<.64?.022:Math.max(.022,.072*bead);
+      return [x*width+.07*p*p,.5*p-.04,z*width];
+    },-.18);
+    case 'horn': return shapedEar(side,(x,y,z,p)=>{
+      const width=.082*(1-p)**1.1+.01;
+      return [x*width+.1*p*p,.4*p-.03,z*width];
+    },-.05);
     case 'long': return shapedEar(side,(x,y,z,p)=>{
       const width=.048+.07*Math.sin(Math.PI*Math.pow(p,.8));
       return [x*width,.64*p-.06,z*.048+.022*(1-x*x)*p];
@@ -279,8 +318,18 @@ export function createAvatar({example=false}={}) {
   model.updateMatrixWorld(true);
 
   // The brush edits the same vertices that the upper and lower joint animate.
-  function limb(name,upper,lower,isLeg,color=stone) {
+  function limb(name,upper,lower,isLeg,color=stone,depth=0) {
     const geometry=volume(isLeg?.136:.132,isLeg?.425:.398,isLeg?.134:.124);
+    if (depth) {
+      const positions=geometry.getAttribute('position');
+      const side=upper.name.endsWith('L')?1:-1;
+      for(let i=0;i<positions.count;i++){
+        const spread=THREE.MathUtils.smoothstep(-positions.getY(i),-.35,.35);
+        positions.setX(i,positions.getX(i)+side*.29*spread);
+        positions.setZ(i,positions.getZ(i)+depth*(.45+.55*spread));
+      }
+      geometry.computeVertexNormals();
+    }
     geometry.translate(0,isLeg?-.291:-.294,0);
     fitLimbSkin(geometry,-lower.position.y);
     tint(geometry,color);
@@ -319,8 +368,11 @@ export function createAvatar({example=false}={}) {
     return mesh;
   }
 
-  function addPart(kind,{shape='fan'}={}) {
+  function addPart(kind,{shape:choice='fan'}={}) {
     if (example || parts.has(kind)) return false;
+    // A choice reads "shape@size", for example "long@2.4" for giant rabbit ears.
+    const [shape,sizeText]=String(choice).split('@');
+    const size=THREE.MathUtils.clamp(Number(sizeText)||1,.5,3);
     const created=[];
     if (kind==='ears') {
       for (const [index,ear] of ears.entries()) {
@@ -329,13 +381,39 @@ export function createAvatar({example=false}={}) {
       }
     } else if (bendableParts.includes(kind)) {
       created.push(movingClay(kind));
+    } else if (kind==='extraLegs') {
+      for (const side of ['L','R']) {
+        created.push(limb('Extra leg '+side,joints['Thigh'+side],joints['Shin'+side],true,stone,-.29));
+      }
     } else if (kind==='hands' || kind==='feet') {
       for (const group of extremities[kind]) {
-        const geometry=kind==='hands'?volume(.135,.17,.105):volume(.128,.13,.19);
+        const handSizes={round:[.135,.17,.105],paddle:[.18,.19,.075],taper:[.108,.248,.095]};
+        const footSizes={round:[.128,.13,.19],flat:[.19,.072,.3],duck:[.16,.06,.27]};
+        const geometry=kind==='hands'?volume(...(handSizes[shape]??handSizes.round)):volume(...(footSizes[shape]??footSizes.round));
+        if (kind==='feet' && shape!=='round' && footSizes[shape]) {
+          const position=geometry.getAttribute('position');
+          for(let i=0;i<position.count;i++){
+            const front=position.getZ(i)/footSizes[shape][2];
+            if (shape==='duck') position.setX(i,position.getX(i)*(1+.85*Math.max(0,front)));
+            position.setY(i,position.getY(i)-.045);
+            position.setZ(i,position.getZ(i)+.07);
+          }
+          geometry.computeVertexNormals();
+        }
+        if (kind==='hands' && shape==='taper') {
+          const position=geometry.getAttribute('position');
+          for(let i=0;i<position.count;i++){
+            const t=position.getY(i)/.248;
+            position.setX(i,position.getX(i)*(.9+.42*t)+.083*t*t);
+          }
+          geometry.computeVertexNormals();
+        }
         created.push(sculptable(group,group.name+' clay',geometry,[0,0,0]));
       }
     }
     if (!created.length) return false;
+    for (const mesh of created) if (mesh.parent!==model) mesh.parent.scale.setScalar(size);
+    model.updateMatrixWorld(true);
     if (created.length===2) {
       symmetryPairs.set(created[0],created[1]);
       symmetryPairs.set(created[1],created[0]);
@@ -349,6 +427,7 @@ export function createAvatar({example=false}={}) {
     if (!meshes) return;
     for (const mesh of meshes) {
       symmetryPairs.delete(mesh);
+      if (mesh.parent!==model) mesh.parent?.scale.setScalar(1);
       mesh.removeFromParent();
       mesh.geometry.dispose();
       mesh.skeleton?.dispose();

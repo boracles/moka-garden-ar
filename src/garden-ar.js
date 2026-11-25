@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {partReaction} from './avatar.js';
+import {softEnvironment} from './environment.js';
 
 const engineURL='https://cdn.jsdelivr.net/npm/@8thwall/engine-binary@1.0.0/dist/xr.js';
 let enginePromise;
@@ -100,7 +101,8 @@ export class GardenAR {
     xr.addCameraPipelineModules([cameraFeed,three,tracking,{
       name:'moka-floor-placement',
       onStart() {
-        const {scene,camera}=xr.Threejs.xrScene();
+        const {scene,camera,renderer}=xr.Threejs.xrScene();
+        softEnvironment(scene,renderer);
         session.scene=scene;
         session.camera=camera;
         camera.position.set(0,1.3,0);

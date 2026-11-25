@@ -260,3 +260,11 @@ legend,label{font-weight:600}
 button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible,select:focus-visible{outline-color:#2d5bff}
 @media(max-width:650px){.intro{min-height:0}.hero-outline{font-size:64px}.workspace{padding:8px}}
 .panel h2{letter-spacing:-.03em}
+.finish-setting{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:8px;margin-top:8px;font-size:12px}
+.finish-setting select{min-height:38px;padding:6px 8px;border:1px solid #aebeb4;border-radius:7px;color:var(--ink);background:var(--cream)}
+.part-settings{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:6px 8px}
+.part-settings legend{grid-column:1/-1}
+.part-settings label{margin:0;font-size:13px}
+.part-settings select{min-height:38px;padding:5px 6px;border:1px solid #aebeb4;border-radius:7px;color:var(--ink);background:var(--cream);font-size:13px;min-width:0}
+.part-settings-note{font-size:12px;opacity:.7}
+.part-settings-hint{grid-column:1/-1;margin:2px 0 0;font-size:12px;opacity:.7}

@@ -2,7 +2,8 @@ import './style.css';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
-import {applyBrush,bendableParts,clayPartLabels,createAvatar,extensionClip,palette,partReaction,reflectedBrush,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
+import {softEnvironment} from './environment.js';
+import {applyBrush,bendableParts,clayPartLabels,createAvatar,extensionClip,palette,partReaction,reflectedBrush,resetPose,restoreBrushAttribute,rigPreview,setFinish,snapshotModel} from './avatar.js';
 import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
 import {PartRule,partActions} from './part-rules.js';
@@ -58,6 +59,7 @@ key.position.set(-3,6,4);
 const rim=new THREE.DirectionalLight(0xe1fff0,2.05);
 rim.position.set(3,4,-4);
 scene.add(key,rim,new THREE.HemisphereLight(0xfff7f0,0x8fa3bd,2.12));
+softEnvironment(scene,renderer);
 const orbit=renderer ? new OrbitControls(camera,renderer.domElement) : null;
 if (orbit) {
   orbit.target.set(0,1.28,0);
@@ -206,9 +208,21 @@ function refreshEditor() {
   if (step==='make') ui('stage-label').textContent=showingExample?'완성 예시':'내 점토 인형';
 }
 
+const partShapeControls={
+  ears:['ear-shape','ear-size'],hands:['hand-shape','hand-size'],
+  feet:['foot-shape','foot-size'],tail:['tail-size'],nose:['nose-size'],
+};
+
+function partShape(part) {
+  const controls=partShapeControls[part];
+  if (!controls) return undefined;
+  const size=ui(controls.at(-1)).value;
+  return controls.length>1?ui(controls[0]).value+'@'+size:'clay@'+size;
+}
+
 function addClayPart(part) {
   stopPreview();
-  if (!avatar.addPart(part,{shape:ui('ear-shape').value})) return;
+  if (!avatar.addPart(part,{shape:partShape(part)})) return;
   rememberEdit({part});
   if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
   updateClayFusion(avatar.model);
@@ -610,6 +624,7 @@ function updateBrushHint() {
     grab:'점토를 잡고 끄는 방향으로 늘리기',
     smooth:'표면을 문질러 매끈하게',
     paint:'표면에 고른 색 칠하기',
+    fill:'누른 부분을 통째로 칠하기',
   };
   ui('stage-hint').textContent=hints[tool]+' · 빈 곳은 끌어서 돌리기';
 }
@@ -637,17 +652,31 @@ for (const button of document.querySelectorAll('[data-tool]')) {
   button.addEventListener('click',()=>selectTool(button.dataset.tool));
 }
 ui('brush-shape').addEventListener('change',updateBrushHint);
-
-ui('ear-shape').addEventListener('change',()=>{
-  if (!avatar.parts.has('ears')) return;
-  stopPreview();
+ui('finish').addEventListener('change',()=>{
   invalidateRegistration();
-  avatar.removePart('ears');
-  avatar.addPart('ears',{shape:ui('ear-shape').value});
-  if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
-  updateClayFusion(avatar.model);
-  frameModel(displayAvatar().model);
+  setFinish(ui('finish').value);
 });
+
+for (const [part,controls] of Object.entries(partShapeControls)) for (const control of controls) {
+  ui(control).addEventListener('change',()=>{
+    const replaced=avatar.parts.get(part);
+    if (!replaced) return;
+    stopPreview();
+    invalidateRegistration();
+    for(let i=undoStack.length-1;i>=0;i--){
+      const edit=undoStack[i];
+      if (!edit.changes) continue;
+      for(const mesh of replaced) edit.changes.delete(mesh);
+      if (!edit.changes.size) undoStack.splice(i,1);
+    }
+    avatar.removePart(part);
+    avatar.addPart(part,{shape:partShape(part)});
+    if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+    updateClayFusion(avatar.model);
+    frameModel(displayAvatar().model);
+    refreshEditor();
+  });
+}
 for (const button of document.querySelectorAll('[data-part]')) {
   button.addEventListener('click',()=>addClayPart(button.dataset.part));
 }
@@ -734,6 +763,19 @@ if (renderer) {
       transientOrbit=event.pointerId;
       orbit.enabled=true;
       positionCursors([]);
+      return;
+    }
+    if (tool==='fill') {
+      const changes=new Map();
+      for (const {object:mesh} of brushHits(hit)) {
+        const colors=mesh.geometry.getAttribute('color');
+        changes.set(mesh,colors.array.slice());
+        const filled=colors.array.slice();
+        for (let i=0;i<filled.length;i+=3) paintColor.toArray(filled,i);
+        restoreBrushAttribute(mesh,'color',filled);
+      }
+      rememberEdit({attribute:'color',changes});
+      updateClayFusion(avatar.model);
       return;
     }
     clayFusionJobs.delete(avatar.model);
@@ -1228,6 +1270,31 @@ function closeAR() {
   arReturnFocus?.focus();
 }
 ui('close-ar').addEventListener('click',closeAR);
+ui('ar-photo').addEventListener('click',async()=>{
+  const blob=await ar.capture();
+  if (!blob) {
+    ui('ar-status').textContent='카메라가 켜진 뒤에 사진을 찍을 수 있어요.';
+    return;
+  }
+  const stamp=new Date().toTimeString().slice(0,8).replaceAll(':','');
+  const file=new File([blob],`또다른나-AR-${stamp}.png`,{type:'image/png'});
+  try {
+    if (navigator.canShare?.({files:[file]})) {
+      await navigator.share({files:[file]});
+      ui('ar-status').textContent='AR 사진을 저장했어요.';
+      return;
+    }
+  } catch(error) {
+    if (error.name==='AbortError') return;
+  }
+  const url=URL.createObjectURL(file);
+  const link=document.createElement('a');
+  link.href=url;
+  link.download=file.name;
+  link.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  ui('ar-status').textContent='AR 사진을 저장했어요.';
+});
 ui('finish-ar-test').addEventListener('click',async event=>{
   const finish=event.currentTarget;
   const current=registration;
