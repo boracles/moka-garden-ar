@@ -2,7 +2,6 @@ import './style.css';
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
-import {plantGenes,createPlant} from './plant.js';
 import {applyBrush,bendableParts,clayPartLabels,createAvatar,extensionClip,palette,partReaction,reflectedBrush,resetPose,restoreBrushAttribute,rigPreview,snapshotModel} from './avatar.js';
 import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
@@ -19,12 +18,12 @@ const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new 
 const initialDate=classDate(params.get('date'))??today;
 for (const id of ['work-date','view-date','print-date']) ui(id).value=initialDate;
 const intro = {
-  make:'모카가든에서 새 정원사를 찾고 있어요. 조건은 하나, 나만의 특별한 점! 내 특별한 점을 닮은 식물을 몸의 모양과 움직임으로 만들어 봐요.',
-  move:'정원사 오디션에서 보여 줄, 나만의 특별한 점이 드러나는 몸짓을 3초 동안 녹화해요.',
+  make:'나를 나답게 하는 모습은 뭘까요? 내 특징과 성격을 몸의 모양에 담아 ‘또 다른 나’를 만들어 봐요.',
+  move:'나다움이 드러나는 몸짓을 3초 동안 녹화해요. ‘또 다른 나’가 똑같이 따라 해요.',
   ability:'만든 몸의 어느 부분이 언제, 어떻게 움직일지 정해요.',
-  place:'정원 속 내 식물을 키울 곳에 QR을 놓고, 비밀 렌즈(AR)로 비춰요.',
+  place:'‘또 다른 나’가 어울리는 곳에 QR을 놓고, 아이패드로 비춰 AR로 띄워요.',
 };
-const labels={make:'형태 편집 중',move:'동작 미리 보기',ability:'기능 미리 보기',place:'나다움 캐릭터'};
+const labels={make:'형태 편집 중',move:'동작 미리 보기',ability:'기능 미리 보기',place:'또 다른 나'};
 const avatar=createAvatar();
 const scene=new THREE.Scene();
 scene.add(avatar.model);
@@ -497,8 +496,8 @@ function tryRule() {
   previewRule.trigger();
   ui('ability-status').hidden=false;
   ui('ability-status').textContent=rule.trigger==='tap'
-    ? '정원에서는 캐릭터를 터치하면 이 동작을 해요.'
-    : '정원 표식에서 나타날 때 이 동작을 해요.';
+    ? 'AR에서 캐릭터를 터치하면 이 동작을 해요.'
+    : 'QR에서 나타날 때 이 동작을 해요.';
 }
 
 async function playCreatureSound(status,setting=Number(ui('sound-pitch').value)) {
@@ -554,26 +553,6 @@ function setExample(visible) {
   frameModel(visible?example.model:avatar.model);
 }
 
-let gardenPlant=null;
-let plantStarted=0;
-function showGardenPlant(show) {
-  if (gardenPlant) {
-    scene.remove(gardenPlant.group);
-    gardenPlant=null;
-  }
-  if (!show) return;
-  const model=displayAvatar().model;
-  model.updateMatrixWorld(true);
-  const bounds=new THREE.Box3().setFromObject(model);
-  const size=bounds.getSize(new THREE.Vector3());
-  gardenPlant=createPlant(plantGenes(model),{height:size.y});
-  gardenPlant.group.position.set(bounds.max.x+size.y*.32,bounds.min.y,bounds.getCenter(new THREE.Vector3()).z);
-  scene.add(gardenPlant.group);
-  gardenPlant.setGrowth(0);
-  plantStarted=performance.now();
-  frameModel([model,gardenPlant.group],true);
-}
-
 function setStep(value) {
   if (!intro[value] || step===value) return;
   if (showingExample) setExample(false);
@@ -614,7 +593,6 @@ function setStep(value) {
   if (step==='place') {
     updateMarkerNumber();
   }
-  showGardenPlant(step==='place');
   if (step==='move') startRigPlacement();
   ui('ability-status').hidden=true;
   refreshEditor();
@@ -1298,11 +1276,6 @@ function draw(now) {
         partReaction(displayAvatar().model,part)(clayBend());
       }
       previewRule?.update(elapsed);
-    }
-    if (gardenPlant) {
-      const seconds=(now-plantStarted)/1000;
-      gardenPlant.setGrowth(seconds/3.2);
-      gardenPlant.update(seconds);
     }
     orbit.update();
     if (!rigOverlay.hidden) {

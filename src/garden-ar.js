@@ -66,7 +66,7 @@ export class GardenAR {
     const orientation=window.DeviceOrientationEvent?.requestPermission?.() ?? Promise.resolve('granted');
     const [motionPermission,xr]=await Promise.all([orientation,warmUpAR()]);
     if (generation!==this.generation) return false;
-    if (motionPermission!=='granted') throw new Error('정원에 놓으려면 기기 움직임 권한을 허용해 주세요.');
+    if (motionPermission!=='granted') throw new Error('AR로 띄우려면 기기 움직임 권한을 허용해 주세요.');
 
     this.xr=xr;
     model.updateMatrixWorld(true);
