@@ -163,7 +163,7 @@ export function markerPose(location,width,height) {
 function loadWork(buffer) {
   return new GLTFLoader().parseAsync(buffer,'').then(gltf=>{
     const model=gltf.scene.children.find(node=>markerPattern.test(node.userData.gardenMarker??''));
-    if (!model) throw new Error('이 파일에는 모카가든 표식 번호가 없어요.');
+    if (!model) throw new Error('이 파일에는 QR 표식 번호가 없어요.');
     const settings=model.userData.gardenWork??{};
     const {rule}=settings;
     const allowed=rule && partActions[rule.part]?.some(([action])=>action===rule.action);
