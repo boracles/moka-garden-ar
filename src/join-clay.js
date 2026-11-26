@@ -10,7 +10,7 @@ export function hasClayFusion(model) {
 export function claySources(model) {
   const sources=[];
   model.traverse(node=>{
-    if (node.isMesh && node.name!==fusedName) sources.push(node);
+    if (node.isMesh && node.name!==fusedName && !node.userData.decor) sources.push(node);
   });
   return sources;
 }

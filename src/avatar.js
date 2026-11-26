@@ -34,14 +34,41 @@ export const finishes={
   glossy:{label:'반들반들',roughness:.2,clearcoat:1,clearcoatRoughness:.06,iridescence:0,sheen:0},
   pearl:{label:'무지개 펄',roughness:.28,clearcoat:.85,clearcoatRoughness:.1,iridescence:1,sheen:0},
   velvet:{label:'보송보송',roughness:.9,clearcoat:0,clearcoatRoughness:0,iridescence:0,sheen:1},
+  dreamy:{label:'몽글몽글',roughness:1,clearcoat:0,clearcoatRoughness:0,iridescence:0,sheen:.5,dreamy:1},
 };
+
+// Soft pastel look: flatter light, edges that fade into the background, and a fine grain.
+function installDreamy(material,amount) {
+  material.onBeforeCompile=shader=>{
+    shader.uniforms.uDreamy=amount;
+    shader.fragmentShader='uniform float uDreamy;\n'+shader.fragmentShader.replace('#include <opaque_fragment>',`#include <opaque_fragment>
+      float dreamyFacing=saturate(abs(dot(normalize(normal),geometryViewDir)));
+      float dreamySoft=smoothstep(.03,.78,dreamyFacing);
+      gl_FragColor.rgb=mix(gl_FragColor.rgb,diffuseColor.rgb*1.12,.55*uDreamy);
+      gl_FragColor.rgb=mix(gl_FragColor.rgb,vec3(1.),(1.-dreamySoft)*.38*uDreamy);
+      gl_FragColor.a*=mix(1.,dreamySoft,uDreamy);
+      float dreamyGrain=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453);
+      gl_FragColor.rgb+=(dreamyGrain-.5)*.08*uDreamy;`);
+  };
+  material.customProgramCacheKey=()=>'dreamy';
+}
+
+export function makeDreamy(material) {
+  installDreamy(material,{value:1});
+  Object.assign(material,{roughness:1,transparent:true});
+  material.needsUpdate=true;
+}
 
 const ceramic = new THREE.MeshPhysicalMaterial({vertexColors:true,roughness:.48,
   iridescenceIOR:1.55,iridescenceThicknessRange:[180,720],sheenColor:new THREE.Color('#ffffff'),sheenRoughness:.45});
+const dreamyAmount={value:0};
+installDreamy(ceramic,dreamyAmount);
 
 export function setFinish(name) {
-  const {label,...values}=finishes[name]??finishes.clay;
+  const {label,dreamy=0,...values}=finishes[name]??finishes.clay;
   Object.assign(ceramic,values);
+  dreamyAmount.value=dreamy;
+  ceramic.transparent=dreamy>0;
   ceramic.userData.finish=finishes[name]?name:'clay';
   ceramic.needsUpdate=true;
 }
@@ -58,7 +85,7 @@ export const bendableParts=['nose','tail','extension'];
 export const clayPartLabels={ears:'귀',nose:'코',tail:'꼬리',hands:'손',feet:'발',extension:'자유 점토'};
 const bendJoints=part=>part==='extension'?extensionJoints:extensionJoints.map(name=>part+'_'+name);
 export const clayAttachments={
-  EarL:'Head',EarR:'Head',NosePivot:'Head',TailPivot:'Pelvis',
+  HeadClay:'Head',EarL:'Head',EarR:'Head',NosePivot:'Head',TailPivot:'Pelvis',
   HandClayL:'HandL',HandClayR:'HandR',FootClayL:'FootL',FootClayR:'FootR',
 };
 
@@ -188,6 +215,94 @@ function earGeometry(shape,side) {
   }
 }
 
+const wave=(a,count,phase=Math.PI/2)=>.5+.5*Math.cos(count*(a-phase));
+
+const heartOutline=(()=>{
+  const bins=720;
+  const table=new Float32Array(bins);
+  const bin=a=>Math.floor(((a/(2*Math.PI))%1+1)%1*bins)%bins;
+  for (let i=0;i<20000;i++) {
+    const t=i/20000*Math.PI*2;
+    const x=16*Math.sin(t)**3/16.5;
+    const y=(13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t)+3)/16.5;
+    const index=bin(Math.atan2(y,x));
+    table[index]=Math.max(table[index],Math.hypot(x,y));
+  }
+  for (let i=0;i<bins;i++) if (!table[i]) table[i]=table[(i+bins-1)%bins];
+  return a=>table[bin(a)];
+})();
+
+const outlines={
+  flower:a=>.4+.6*Math.abs(Math.cos(2.5*(a-Math.PI/2)))**.45,
+  daisy:a=>.5+.5*Math.abs(Math.cos(4*(a-Math.PI/2)))**.45,
+  star:a=>.56+.44*wave(a,5)**1.5,
+  cloud:a=>.8+.2*wave(a,7)**.4,
+  sun:a=>.7+.3*wave(a,12)**2.5,
+  heart:heartOutline,
+  dot:()=>1,
+  bow:a=>.34+.66*Math.abs(Math.cos(a))**1.6,
+};
+
+// A sphere whose poles face forward is pressed into a thick tile with the given outline.
+function pillowGeometry(outline,{radius=1,thickness=.2,stretch=[1,1],segments=128}={}) {
+  const geometry=new THREE.SphereGeometry(1,segments,Math.round(segments/2.4)).rotateX(Math.PI/2);
+  const positions=geometry.getAttribute('position');
+  for (let i=0;i<positions.count;i++) {
+    const x=positions.getX(i);
+    const y=positions.getY(i);
+    const z=positions.getZ(i);
+    const angle=Math.atan2(y,x);
+    const reach=outline(angle)*radius*Math.hypot(x,y);
+    positions.setXYZ(i,Math.cos(angle)*reach*stretch[0],Math.sin(angle)*reach*stretch[1],Math.sign(z)*thickness*Math.abs(z)**.6);
+  }
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function moonGeometry(radius,thickness) {
+  const geometry=new THREE.SphereGeometry(1,48,112);
+  const positions=geometry.getAttribute('position');
+  for (let i=0;i<positions.count;i++) {
+    const x=positions.getX(i);
+    const y=positions.getY(i);
+    const z=positions.getZ(i);
+    const p=(y+1)/2;
+    const angle=Math.PI+(p-.5)*4.5;
+    const width=.3*Math.sin(Math.PI*p)**.8+.025;
+    const reach=(.62+x*width)*radius;
+    const depth=Math.sign(z)*thickness*Math.abs(z)**.6*(width/.325)**.45;
+    positions.setXYZ(i,Math.cos(angle)*reach+.24*radius,Math.sin(angle)*reach,depth);
+  }
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+export const headShapes={flower:'다섯 꽃잎',daisy:'여덟 꽃잎',star:'별',cloud:'구름',sun:'해',moon:'달',heart:'하트'};
+
+function headShapeGeometry(shape) {
+  if (shape==='moon') return moonGeometry(.64,.27);
+  return pillowGeometry(outlines[shape]??outlines.flower,{
+    radius:{star:.7,cloud:.62,heart:.62}[shape]??.6,
+    thickness:.3,
+    stretch:shape==='cloud'?[1.4,.86]:[1,1],
+  });
+}
+
+export const decorShapes={star:'별',flower:'꽃',heart:'하트',dot:'동그라미',bow:'리본'};
+
+function decorGeometry(shape,size) {
+  return pillowGeometry(outlines[shape]??outlines.star,{
+    radius:(shape==='bow'?.1:.075)*size,
+    thickness:.028*size,
+    stretch:shape==='bow'?[1,.75]:[1,1],
+    segments:56,
+  });
+}
+
 function writeSkin(geometry,weightsForHeight) {
   const position=geometry.getAttribute('position');
   const weights=new Float32Array(position.count*4);
@@ -249,6 +364,11 @@ export function createAvatar({example=false}={}) {
   const pelvis=joint(model,'Pelvis',0,.88,0);
   const spine=joint(pelvis,'Spine',0,.23,0);
   const head=joint(spine,'Head',0,.57,0);
+  const headClay=new THREE.Group();
+  headClay.name='HeadClay';
+  headClay.position.set(0,.32,.05);
+  head.add(headClay);
+  const decorations=[];
   const ears=[1,-1].map((side,index)=>{
     const ear=new THREE.Group();
     ear.name=index===0?'EarL':'EarR';
@@ -374,7 +494,10 @@ export function createAvatar({example=false}={}) {
     const [shape,sizeText]=String(choice).split('@');
     const size=THREE.MathUtils.clamp(Number(sizeText)||1,.5,3);
     const created=[];
-    if (kind==='ears') {
+    if (kind==='headShape') {
+      created.push(sculptable(headClay,'HeadClay clay',headShapeGeometry(shape),[0,0,0]));
+      tuckHead(1);
+    } else if (kind==='ears') {
       for (const [index,ear] of ears.entries()) {
         const side=index===0?1:-1;
         created.push(sculptable(ear,ear.name+' clay',earGeometry(shape,side),[0,0,0]));
@@ -425,6 +548,8 @@ export function createAvatar({example=false}={}) {
   function removePart(kind) {
     const meshes=parts.get(kind);
     if (!meshes) return;
+    if (kind==='headShape') tuckHead(-1);
+    for (const decor of decorations.filter(item=>meshes.some(mesh=>mesh.name===item.userData.host))) removeDecor(decor);
     for (const mesh of meshes) {
       symmetryPairs.delete(mesh);
       if (mesh.parent!==model) mesh.parent?.scale.setScalar(1);
@@ -435,6 +560,94 @@ export function createAvatar({example=false}={}) {
       if (index!==-1) surfaces.splice(index,1);
     }
     parts.delete(kind);
+  }
+
+  // A head shape replaces the round head, so the body's own head is tucked inside it.
+  let headTuck=null;
+  function tuckHead(direction) {
+    if (!bodyMesh) return;
+    const positions=bodyMesh.geometry.getAttribute('position');
+    if (direction>0 && !headTuck) {
+      const center=new THREE.Vector3(0,1.93,0);
+      const point=new THREE.Vector3();
+      headTuck=new Float32Array(positions.count*3);
+      for (let i=0;i<positions.count;i++) {
+        point.fromBufferAttribute(positions,i);
+        const amount=.55*THREE.MathUtils.smoothstep(point.y,1.64,1.84);
+        if (!amount) continue;
+        point.sub(center).multiplyScalar(-amount).toArray(headTuck,i*3);
+      }
+    } else if (direction>0 || !headTuck) {
+      return;
+    }
+    for (let i=0;i<positions.count;i++) {
+      positions.setXYZ(i,positions.getX(i)+direction*headTuck[i*3],
+        positions.getY(i)+direction*headTuck[i*3+1],positions.getZ(i)+direction*headTuck[i*3+2]);
+    }
+    if (direction<0) headTuck=null;
+    refreshAttribute(bodyMesh,'position');
+  }
+
+  // A small clay piece pressed onto the surface. It follows the surface it was pressed on.
+  function addDecor({object:host,point,face},{shape='star',size=1,color='#f3d54a'}={}) {
+    if (example || !host?.parent) return null;
+    model.updateMatrixWorld(true);
+    const toHost=host.matrixWorld.clone().invert();
+    const center=point.clone().applyMatrix4(toHost);
+    const normal=face.normal.clone().normalize();
+    const up=new THREE.Vector3(0,1,0).transformDirection(model.matrixWorld).transformDirection(toHost);
+    const across=up.clone().cross(normal);
+    if (across.lengthSq()<1e-6) across.set(1,0,0).cross(normal);
+    across.normalize();
+    const upright=normal.clone().cross(across);
+    const geometry=decorGeometry(shape,size);
+    const placement=new THREE.Matrix4().makeBasis(across,upright,normal)
+      .setPosition(center.addScaledVector(normal,-.01*size));
+    geometry.applyMatrix4(placement);
+    tint(geometry,color);
+    let mesh;
+    if (host.isSkinnedMesh) {
+      const {position,skinIndex,skinWeight}=host.geometry.attributes;
+      const vertex=new THREE.Vector3();
+      let nearest=0,best=Infinity;
+      for (let i=0;i<position.count;i++) {
+        const distance=vertex.fromBufferAttribute(position,i).distanceToSquared(point.clone().applyMatrix4(toHost));
+        if (distance<best) {best=distance;nearest=i;}
+      }
+      const count=geometry.getAttribute('position').count;
+      const indices=new Uint16Array(count*4);
+      const weights=new Float32Array(count*4);
+      for (let i=0;i<count;i++) for (let slot=0;slot<4;slot++) {
+        indices[i*4+slot]=skinIndex.getComponent(nearest,slot);
+        weights[i*4+slot]=skinWeight.getComponent(nearest,slot);
+      }
+      geometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(indices,4));
+      geometry.setAttribute('skinWeight',new THREE.Float32BufferAttribute(weights,4));
+      mesh=new THREE.SkinnedMesh(geometry,ceramic);
+      mesh.frustumCulled=false;
+    } else {
+      mesh=new THREE.Mesh(geometry,ceramic);
+    }
+    mesh.name='Decor';
+    mesh.userData.decor=true;
+    mesh.userData.host=host.name;
+    mesh.castShadow=true;
+    mesh.position.copy(host.position);
+    mesh.quaternion.copy(host.quaternion);
+    mesh.scale.copy(host.scale);
+    host.parent.add(mesh);
+    model.updateMatrixWorld(true);
+    if (mesh.isSkinnedMesh) mesh.bind(host.skeleton,host.bindMatrix);
+    decorations.push(mesh);
+    return mesh;
+  }
+
+  function removeDecor(mesh) {
+    const index=decorations.indexOf(mesh);
+    if (index===-1) return;
+    decorations.splice(index,1);
+    mesh.removeFromParent();
+    mesh.geometry.dispose();
   }
 
   let bodyMesh;
@@ -499,7 +712,7 @@ export function createAvatar({example=false}={}) {
     return symmetryPairs.get(mesh)??mesh;
   }
 
-  return {model,joints,rest,surfaces,bodyMesh,ankles,wrists,parts,addPart,removePart,positionExtension,mirrorSurface};
+  return {model,joints,rest,surfaces,bodyMesh,ankles,wrists,parts,decorations,addPart,removePart,addDecor,removeDecor,positionExtension,mirrorSurface};
 }
 
 export function resetPose(avatar) {
@@ -596,12 +809,16 @@ export function applyBrush(hits,tool,radius,distance,color,pressure=1) {
 
 function applyBrushSamples(mesh,samples,tool,radius,distance,color,pressure) {
   const geometry=mesh.geometry;
-  const key=tool==='paint'?'color':'position';
+  const key=tool==='paint'||tool==='blend'?'color':'position';
   const attribute=geometry.getAttribute(key);
   const positions=geometry.getAttribute('position').array;
   const radiusSquared=radius*radius;
   const strength=Math.min(.027,Math.max(.008,distance*.0022))*pressure*(tool==='push'?-1:1);
-  const adjacency=tool==='smooth'?surfaceNeighbors(geometry):null;
+  const adjacency=tool==='smooth'||tool==='blend'?surfaceNeighbors(geometry):null;
+  if (tool==='blend') {
+    blendColors(mesh,samples,radiusSquared,adjacency,pressure);
+    return;
+  }
   const sculpt=tool==='pull'||tool==='push';
   if (sculpt && samples.length===2) {
     const [left,right]=samples;
@@ -650,6 +867,34 @@ function applyBrushSamples(mesh,samples,tool,radius,distance,color,pressure) {
     }
   }
   restoreBrushAttribute(mesh,key,output);
+}
+
+// Spreads neighbouring colours into each other so painted patches melt into gradients.
+function blendColors(mesh,samples,radiusSquared,adjacency,pressure) {
+  const positions=mesh.geometry.getAttribute('position').array;
+  const influences=new Float32Array(positions.length/3);
+  for (let i=0;i<influences.length;i++) {
+    for (const {center} of samples) {
+      const dx=positions[i*3]-center.x,dy=positions[i*3+1]-center.y,dz=positions[i*3+2]-center.z;
+      const d=dx*dx+dy*dy+dz*dz;
+      if (d<radiusSquared) influences[i]=Math.max(influences[i],(1-d/radiusSquared)**2);
+    }
+  }
+  let colors=mesh.geometry.getAttribute('color').array.slice();
+  for (let pass=0;pass<9;pass++) {
+    const next=colors.slice();
+    for (let i=0;i<influences.length;i++) {
+      const influence=influences[i];
+      const adjacent=adjacency[i];
+      if (!influence || !adjacent.length) continue;
+      for (let k=0;k<3;k++) {
+        const mean=adjacent.reduce((sum,vertex)=>sum+colors[vertex*3+k],0)/adjacent.length;
+        next[i*3+k]+=(mean-colors[i*3+k])*Math.min(1,influence*.9*pressure);
+      }
+    }
+    colors=next;
+  }
+  restoreBrushAttribute(mesh,'color',colors);
 }
 
 export function snapshotModel(avatar) {

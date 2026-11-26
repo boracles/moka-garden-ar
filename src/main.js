@@ -209,6 +209,7 @@ function refreshEditor() {
 }
 
 const partShapeControls={
+  headShape:['head-shape','head-size'],
   ears:['ear-shape','ear-size'],hands:['hand-shape','hand-size'],
   feet:['foot-shape','foot-size'],tail:['tail-size'],nose:['nose-size'],
 };
@@ -625,6 +626,8 @@ function updateBrushHint() {
     smooth:'표면을 문질러 매끈하게',
     paint:'표면에 고른 색 칠하기',
     fill:'누른 부분을 통째로 칠하기',
+    blend:'문질러 색을 번지게 하기',
+    decor:'누른 곳에 장식 붙이기',
   };
   ui('stage-hint').textContent=hints[tool]+' · 빈 곳은 끌어서 돌리기';
 }
@@ -633,6 +636,7 @@ function selectTool(value) {
   tool=value;
   stopPreview();
   ui('brush-shape').hidden=tool!=='sculpt';
+  ui('decor-options').hidden=tool!=='decor';
   updateBrushHint();
   ui('brush-cursor').hidden=true;
   ui('mirror-cursor').hidden=true;
@@ -687,7 +691,7 @@ const customColor=ui('custom-color');
 customColor.value=palette[1][1];
 function choosePaint(color,button) {
   paintColor.set(color);
-  selectTool('paint');
+  if (tool!=='decor') selectTool('paint');
   for (const item of ui('colors').children) item.setAttribute('aria-pressed',String(item===button));
 }
 customColor.addEventListener('input',()=>choosePaint(customColor.value));
@@ -715,6 +719,7 @@ if (renderer) {
   const symmetry=ui('brush-symmetry');
   function radius() {
     const size=Number(ui('brush-size').value);
+    if (tool==='decor') return .075*Number(ui('decor-size').value);
     if (tool==='paint') return .045+(size-1)*.0255;
     return (.065+size*.021)*(tool==='grab'?1.7:1);
   }
@@ -778,13 +783,22 @@ if (renderer) {
       updateClayFusion(avatar.model);
       return;
     }
+    if (tool==='decor') {
+      const shape=ui('decor-shape').value;
+      const size=Number(ui('decor-size').value);
+      const decor=brushHits(hit).map(item=>avatar.addDecor(item,{shape,size,color:paintColor})).filter(Boolean);
+      if (!decor.length) return;
+      rememberEdit({decor});
+      if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+      return;
+    }
     clayFusionJobs.delete(avatar.model);
     showClaySources(avatar.model,true);
     canvas.setPointerCapture(event.pointerId);
     brush={
       id:event.pointerId,x:event.clientX,y:event.clientY,changes:new Map(),
       tool:tool==='sculpt'?ui('sculpt-direction-in').checked?'push':'pull':tool,
-      attribute:tool==='paint'?'color':'position',
+      attribute:tool==='paint'||tool==='blend'?'color':'position',
       symmetry:symmetry.checked,
       radius:radius(),
       color:paintColor.clone(),
@@ -852,6 +866,12 @@ ui('undo').addEventListener('click',()=>{
   const last=undoStack.pop();
   if (!last) return;
   invalidateRegistration();
+  if (last.decor) {
+    for (const mesh of last.decor) avatar.removeDecor(mesh);
+    if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+    refreshEditor();
+    return;
+  }
   if (last.part) {
     stopPreview();
     avatar.removePart(last.part);
@@ -917,6 +937,7 @@ function gardenWork() {
     motion:motionClip?.name??null,
     speed:Number(ui('motion-speed').value),
     sound:ui('use-sound').checked?Number(ui('sound-pitch').value):null,
+    finish:ui('finish').value,
   };
   if (rule) {
     const {clip,...blocks}=rule;

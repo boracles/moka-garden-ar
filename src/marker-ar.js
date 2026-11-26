@@ -3,6 +3,7 @@ import jsQR from 'jsqr';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {PartRule,partActions} from './part-rules.js';
 import {softEnvironment} from './environment.js';
+import {makeDreamy} from './avatar.js';
 
 const markerPattern=/^moka-garden-(?:0[1-9]|[1-9]\d)$/;
 const scannedCorners=['topLeftCorner','topRightCorner','bottomRightCorner','bottomLeftCorner'];
@@ -260,6 +261,18 @@ export class MarkerAR {
     const center=bounds.getCenter(new THREE.Vector3());
     model.scale.multiplyScalar(size);
     model.position.set(-center.x*size,-bounds.min.y*size,-center.z*size);
+    if (settings.finish==='dreamy') {
+      const copies=new Map();
+      model.traverse(node=>{
+        if (!node.isMesh) return;
+        if (!copies.has(node.material)) {
+          const copy=node.material.clone();
+          makeDreamy(copy);
+          copies.set(node.material,copy);
+        }
+        node.material=copies.get(node.material);
+      });
+    }
     this.anchor.add(model);
     this.settings=settings;
     const movement=animations.find(clip=>clip.name===settings.motion);

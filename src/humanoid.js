@@ -120,6 +120,41 @@ export function buildHumanoid(avatar,markers) {
     return [leg];
   });
 
+  // Pieces pressed on the body or extra legs follow the new skeleton from the nearest skin weights.
+  const decorations=[];
+  for (const host of [body,...extraLegs]) {
+    const {position,skinIndex,skinWeight}=host.geometry.attributes;
+    const vertex=new THREE.Vector3();
+    for (const piece of source.children.filter(node=>node.userData.decor && node.userData.host===host.name)) {
+      const pieceGeometry=piece.geometry.clone().applyMatrix4(piece.matrixWorld);
+      pieceGeometry.computeBoundingSphere();
+      const center=pieceGeometry.boundingSphere.center;
+      let nearest=0,best=Infinity;
+      for (let i=0;i<position.count;i++) {
+        const distance=vertex.fromBufferAttribute(position,i).distanceToSquared(center);
+        if (distance<best) {best=distance;nearest=i;}
+      }
+      const count=pieceGeometry.getAttribute('position').count;
+      const indices=new Uint16Array(count*4);
+      const weights=new Float32Array(count*4);
+      for (let i=0;i<count;i++) for (let slot=0;slot<4;slot++) {
+        indices[i*4+slot]=skinIndex.getComponent(nearest,slot);
+        weights[i*4+slot]=skinWeight.getComponent(nearest,slot);
+      }
+      pieceGeometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(indices,4));
+      pieceGeometry.setAttribute('skinWeight',new THREE.Float32BufferAttribute(weights,4));
+      const mesh=new THREE.SkinnedMesh(pieceGeometry,piece.material);
+      mesh.name=piece.name;
+      mesh.userData={...piece.userData};
+      mesh.frustumCulled=false;
+      mesh.castShadow=true;
+      model.add(mesh);
+      mesh.updateMatrixWorld(true);
+      mesh.bind(host.skeleton,host.bindMatrix);
+      decorations.push(mesh);
+    }
+  }
+
   const attachments={...clayAttachments,ExtensionPivot:source.getObjectByName('ExtensionPivot').parent.name};
   for (const [name,parent] of Object.entries(attachments)) {
     const part=source.getObjectByName(name);
@@ -138,6 +173,7 @@ export function buildHumanoid(avatar,markers) {
         leg.geometry.dispose();
         leg.skeleton.dispose();
       }
+      for (const piece of decorations) piece.geometry.dispose();
       for (const name of ['Moving clay','NosePivot clay','TailPivot clay']) {
         model.getObjectByName(name)?.skeleton.dispose();
       }
