@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
 import {softEnvironment} from './environment.js';
-import {applyBrush,bendableParts,clayPartLabels,createAvatar,extensionClip,palette,partReaction,reflectedBrush,resetPose,restoreBrushAttribute,rigPreview,setFinish,snapshotModel} from './avatar.js';
+import {applyBrush,applyPose,bendableParts,clayPartLabels,createAvatar,extensionClip,palette,partReaction,reflectedBrush,resetPose,restoreBrushAttribute,rigPreview,setFinish,snapshotModel} from './avatar.js';
 import {buildHumanoid,defaultMarkers,markerGroups} from './humanoid.js';
 import {MotionCapture} from './motion.js';
 import {PartRule,partActions} from './part-rules.js';
@@ -106,6 +106,7 @@ let audioContext;
 let cameraRequest=0;
 let openingCamera=false;
 let brush=null;
+let stamping=null;
 let transientOrbit=null;
 let example=null;
 let showingExample=false;
@@ -165,6 +166,8 @@ function stopPreview() {
   mixer=null;
   playingClay=false;
   resetPose(displayAvatar());
+  const pose=document.getElementById('pose');
+  if (pose) pose.value='rest';
 }
 
 function preview(clip,speed=1,isClay=false) {
@@ -627,7 +630,8 @@ function updateBrushHint() {
     paint:'표면에 고른 색 칠하기',
     fill:'누른 부분을 통째로 칠하기',
     blend:'문질러 색을 번지게 하기',
-    decor:'누른 곳에 장식 붙이기',
+    decor:'누른 곳에 장식 붙이기 · 끌면 이어서 붙어요',
+    tint:'누른 곳부터 색이 스며들게',
   };
   ui('stage-hint').textContent=hints[tool]+' · 빈 곳은 끌어서 돌리기';
 }
@@ -691,7 +695,7 @@ const customColor=ui('custom-color');
 customColor.value=palette[1][1];
 function choosePaint(color,button) {
   paintColor.set(color);
-  if (tool!=='decor') selectTool('paint');
+  if (tool!=='decor' && tool!=='tint') selectTool('paint');
   for (const item of ui('colors').children) item.setAttribute('aria-pressed',String(item===button));
 }
 customColor.addEventListener('input',()=>choosePaint(customColor.value));
@@ -720,8 +724,47 @@ if (renderer) {
   function radius() {
     const size=Number(ui('brush-size').value);
     if (tool==='decor') return .075*Number(ui('decor-size').value);
+    if (tool==='tint') return tintReach();
     if (tool==='paint') return .045+(size-1)*.0255;
     return (.065+size*.021)*(tool==='grab'?1.7:1);
+  }
+  function tintReach() {
+    return .25+Number(ui('brush-size').value)*.09;
+  }
+  // Colour soaks in from the pressed point and fades with distance, across every part and piece it reaches.
+  function tintFrom(hits) {
+    const reach=tintReach();
+    const changes=new Map();
+    const vertex=new THREE.Vector3();
+    const color=new THREE.Color();
+    avatar.model.updateMatrixWorld(true);
+    for (const mesh of [...avatar.surfaces,...avatar.decorations]) {
+      const colors=mesh.geometry.getAttribute('color');
+      if (!colors) continue;
+      const toLocal=mesh.matrixWorld.clone().invert();
+      const scale=mesh.getWorldScale(new THREE.Vector3()).x;
+      const centers=hits.map(({point})=>point.clone().applyMatrix4(toLocal));
+      const positions=mesh.geometry.getAttribute('position');
+      const next=colors.array.slice();
+      let touched=false;
+      for (let i=0;i<positions.count;i++) {
+        vertex.fromBufferAttribute(positions,i);
+        const distance=Math.min(...centers.map(center=>vertex.distanceTo(center)))*scale;
+        if (distance>=reach) continue;
+        const amount=1-THREE.MathUtils.smoothstep(distance,0,reach);
+        color.fromArray(next,i*3).lerp(paintColor,amount*.96).toArray(next,i*3);
+        touched=true;
+      }
+      if (!touched) continue;
+      changes.set(mesh,colors.array.slice());
+      restoreBrushAttribute(mesh,'color',next);
+    }
+    return changes;
+  }
+  function stampDecor(hits) {
+    const shape=ui('decor-shape').value;
+    const size=Number(ui('decor-size').value);
+    return hits.map(item=>avatar.addDecor(item,{shape,size,color:paintColor})).filter(Boolean);
   }
   function pointRay(event) {
     const bounds=canvas.getBoundingClientRect();
@@ -731,7 +774,11 @@ if (renderer) {
   }
   function intersect(event) {
     pointRay(event);
-    return raycaster.intersectObjects(avatar.surfaces,false)[0];
+    if (tool!=='decor' && tool!=='tint') return raycaster.intersectObjects(avatar.surfaces,false)[0];
+    // Pieces can be stacked: a press on a piece lands on the surface that piece belongs to.
+    const hit=raycaster.intersectObjects([...avatar.surfaces,...avatar.decorations],false)[0];
+    const host=hit?.object.decorHost;
+    return host?{object:host,point:hit.point,face:{normal:hit.face.normal.clone()},distance:hit.distance}:hit;
   }
   function brushHits(hit) {
     if (!hit) return [];
@@ -761,7 +808,7 @@ if (renderer) {
   }
   symmetry.addEventListener('change',()=>positionCursors([]));
   canvas.addEventListener('pointerdown',event=>{
-    if (step!=='make'||showingExample||brush||transientOrbit!==null||event.button>0) return;
+    if (step!=='make'||showingExample||brush||stamping||transientOrbit!==null||event.button>0) return;
     stopPreview();
     const hit=intersect(event);
     if (!hit) {
@@ -783,13 +830,18 @@ if (renderer) {
       updateClayFusion(avatar.model);
       return;
     }
+    if (tool==='tint') {
+      const changes=tintFrom(brushHits(hit));
+      if (!changes.size) return;
+      rememberEdit({attribute:'color',changes});
+      updateClayFusion(avatar.model);
+      return;
+    }
     if (tool==='decor') {
-      const shape=ui('decor-shape').value;
-      const size=Number(ui('decor-size').value);
-      const decor=brushHits(hit).map(item=>avatar.addDecor(item,{shape,size,color:paintColor})).filter(Boolean);
+      const decor=stampDecor(brushHits(hit));
       if (!decor.length) return;
-      rememberEdit({decor});
-      if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+      canvas.setPointerCapture(event.pointerId);
+      stamping={id:event.pointerId,decor,last:hit.point.clone(),gap:radius()*1.6};
       return;
     }
     clayFusionJobs.delete(avatar.model);
@@ -828,6 +880,12 @@ if (renderer) {
     }
     const hits=brushHits(intersect(event));
     positionCursors(hits);
+    if (stamping && event.pointerId===stamping.id) {
+      if (!hits.length || hits[0].point.distanceTo(stamping.last)<stamping.gap) return;
+      stamping.last.copy(hits[0].point);
+      stamping.decor.push(...stampDecor(hits));
+      return;
+    }
     if (event.pointerId!==brush?.id) return;
     const distance=Math.hypot(event.clientX-brush.x,event.clientY-brush.y);
     if (distance<(brush.tool==='paint'?2:4)) return;
@@ -840,6 +898,13 @@ if (renderer) {
     if (transientOrbit===event.pointerId) {
       transientOrbit=null;
       orbit.enabled=showingExample||step!=='make';
+    }
+    if (stamping && event.pointerId===stamping.id) {
+      rememberEdit({decor:stamping.decor});
+      stamping=null;
+      if (riggedAvatar) setRiggedAvatar(buildHumanoid(avatar,rigMarkers));
+      if (event.pointerType==='touch') positionCursors([]);
+      return;
     }
     if (event.pointerId!==brush?.id) return;
     if (event.type==='pointerup' && brush.grab && brush.changes.size) {
@@ -1291,6 +1356,71 @@ function closeAR() {
   arReturnFocus?.focus();
 }
 ui('close-ar').addEventListener('click',closeAR);
+async function saveImage(blob,name) {
+  const file=new File([blob],name,{type:'image/png'});
+  try {
+    if (navigator.canShare?.({files:[file]})) {
+      await navigator.share({files:[file]});
+      return true;
+    }
+  } catch(error) {
+    if (error.name==='AbortError') return false;
+  }
+  const url=URL.createObjectURL(file);
+  const link=document.createElement('a');
+  link.href=url;
+  link.download=file.name;
+  link.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  return true;
+}
+// The character alone on a transparent background, sharp enough for slides and activity sheets.
+function characterPicture() {
+  if (!renderer) return Promise.resolve(null);
+  const ratio=renderer.getPixelRatio();
+  renderer.setPixelRatio(3);
+  renderer.render(scene,camera);
+  const frame=document.createElement('canvas');
+  frame.width=renderer.domElement.width;
+  frame.height=renderer.domElement.height;
+  const context=frame.getContext('2d',{willReadFrequently:true});
+  context.drawImage(renderer.domElement,0,0);
+  renderer.setPixelRatio(ratio);
+  // Trim the empty space around the character.
+  const {data,width,height}=context.getImageData(0,0,frame.width,frame.height);
+  let left=width,top=height,right=-1,bottom=-1;
+  for (let y=0;y<height;y++) for (let x=0;x<width;x++) {
+    if (data[(y*width+x)*4+3]<=8) continue;
+    if (x<left) left=x;
+    if (x>right) right=x;
+    if (y<top) top=y;
+    if (y>bottom) bottom=y;
+  }
+  if (right<0) return Promise.resolve(null);
+  const margin=Math.round(Math.max(right-left,bottom-top)*.04);
+  const picture=document.createElement('canvas');
+  picture.width=right-left+1+margin*2;
+  picture.height=bottom-top+1+margin*2;
+  picture.getContext('2d').drawImage(frame,left-margin,top-margin,picture.width,picture.height,0,0,picture.width,picture.height);
+  return new Promise(resolve=>picture.toBlob(resolve,'image/png'));
+}
+if (import.meta.env.DEV) {
+  window.mokaCharacterPicture=characterPicture;
+  window.mokaPose=pose=>applyPose(displayAvatar(),pose);
+}
+ui('pose').addEventListener('change',()=>{
+  const pose=ui('pose').value;
+  stopPreview();
+  if (pose==='rest') return;
+  ui('pose').value=pose;
+  applyPose(displayAvatar(),pose);
+});
+ui('save-picture').addEventListener('click',async()=>{
+  const blob=await characterPicture();
+  if (!blob) return;
+  const stamp=new Date().toTimeString().slice(0,8).replaceAll(':','');
+  if (await saveImage(blob,`또다른나-${stamp}.png`)) ui('stage-hint').textContent='캐릭터 그림을 저장했어요.';
+});
 ui('ar-photo').addEventListener('click',async()=>{
   const blob=await ar.capture();
   if (!blob) {

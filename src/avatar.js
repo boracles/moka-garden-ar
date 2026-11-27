@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {clone} from 'three/addons/utils/SkeletonUtils.js';
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {bindClayBody,clayBodyGeometry} from './clay-body.js';
 
 export const palette = [
@@ -292,15 +293,95 @@ function headShapeGeometry(shape) {
   });
 }
 
-export const decorShapes={star:'별',flower:'꽃',heart:'하트',dot:'동그라미',bow:'리본'};
+export const decorShapes={star:'별',flower:'꽃',heart:'하트',dot:'동그라미',bow:'리본',eye:'눈',knob:'방울 돌기',coral:'산호',cone:'고깔',spike:'가시',bubble:'뽀글뽀글',fur:'털'};
+// One press scatters several of these over the surface instead of a single piece.
+const scatterCounts={spike:8,bubble:6,fur:10};
+
+const arc=(r,cy,from,to,steps)=>Array.from({length:steps+1},(_,i)=>{
+  const a=from+(to-from)*i/steps;
+  return [Math.max(r*Math.cos(a),0),cy+r*Math.sin(a)];
+});
+// Profiles turned around the surface normal: [radius, height above the surface].
+const decorProfiles={
+  knob:[[.032,-.02],[.02,0],[.018,.05],...arc(.045,.11,-1.05,Math.PI/2,12)],
+  cone:[[.12,-.03],[.118,0],[.1,.07],[.068,.15],[.034,.22],...arc(.012,.25,0,Math.PI/2,4)],
+  spike:[[.03,-.015],[.026,0],[.015,.04],...arc(.005,.074,0,Math.PI/2,3)],
+  bubble:arc(.088,-.032,-Math.PI/2,Math.PI/2,16),
+  fur:[[.024,-.015],[.02,0],[.018,.07],...arc(.018,.07,0,Math.PI/2,6)],
+};
+
+// A rounded twig standing on the origin along +z.
+function twigGeometry(length,radius) {
+  const profile=[[radius*1.2,-radius],[radius,0],[radius*.78,length*.82],...arc(radius*.78,length*.82,0,Math.PI/2,5)];
+  return new THREE.LatheGeometry(profile.map(([r,y])=>new THREE.Vector2(r,y)),14).rotateX(Math.PI/2);
+}
+
+// Branches that split twice, like coral or a little tree.
+function coralGeometry(size) {
+  const pieces=[];
+  const grow=(matrix,length,radius,depth)=>{
+    pieces.push(twigGeometry(length,radius).applyMatrix4(matrix));
+    if (!depth) return;
+    const forks=depth===2?3:2;
+    for (let i=0;i<forks;i++) {
+      const turn=i/forks*Math.PI*2+depth*.7+Math.random()*.5;
+      const tilt=.5+Math.random()*.3;
+      const next=matrix.clone()
+        .multiply(new THREE.Matrix4().makeTranslation(0,0,length*.78))
+        .multiply(new THREE.Matrix4().makeRotationZ(turn))
+        .multiply(new THREE.Matrix4().makeRotationX(tilt));
+      grow(next,length*.72,radius*.74,depth-1);
+    }
+  };
+  grow(new THREE.Matrix4(),.11*size,.024*size,2);
+  const geometry=mergeGeometries(pieces);
+  for (const piece of pieces) piece.dispose();
+  return geometry;
+}
 
 function decorGeometry(shape,size) {
+  if (shape==='eye') return pillowGeometry(outlines.dot,{radius:.034*size,thickness:.024*size,segments:40});
+  if (shape==='coral') {
+    const geometry=coralGeometry(size);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+  const profile=decorProfiles[shape];
+  if (profile) {
+    const geometry=new THREE.LatheGeometry(profile.map(([r,y])=>new THREE.Vector2(r*size,y*size)),shape==='cone'?40:20)
+      .rotateX(Math.PI/2);
+    if (shape==='fur') {
+      // Hair hangs down a little, like soft clay fingers.
+      const positions=geometry.getAttribute('position');
+      for (let i=0;i<positions.count;i++) {
+        const height=Math.max(positions.getZ(i),0)/size;
+        positions.setY(i,positions.getY(i)-5.5*height*height*size);
+      }
+    }
+    geometry.computeVertexNormals();
+    return geometry;
+  }
   return pillowGeometry(outlines[shape]??outlines.star,{
     radius:(shape==='bow'?.1:.075)*size,
     thickness:.028*size,
     stretch:shape==='bow'?[1,.75]:[1,1],
     segments:56,
   });
+}
+
+// A knob keeps the body colour on its stalk and takes the chosen colour on its ball, like a dipped tip.
+function paintDecor(geometry,shape,tip,base) {
+  if (shape!=='knob') return tint(geometry,tip);
+  geometry.computeBoundingBox();
+  const top=geometry.boundingBox.max.z;
+  const positions=geometry.getAttribute('position');
+  const colors=new Float32Array(positions.count*3);
+  const color=new THREE.Color();
+  for (let i=0;i<positions.count;i++) {
+    const blend=THREE.MathUtils.smoothstep(positions.getZ(i)/top,.4,.52);
+    color.copy(base).lerp(tip,blend).toArray(colors,i*3);
+  }
+  geometry.setAttribute('color',new THREE.BufferAttribute(colors,3));
 }
 
 function writeSkin(geometry,weightsForHeight) {
@@ -594,35 +675,61 @@ export function createAvatar({example=false}={}) {
     model.updateMatrixWorld(true);
     const toHost=host.matrixWorld.clone().invert();
     const center=point.clone().applyMatrix4(toHost);
-    const normal=face.normal.clone().normalize();
     const up=new THREE.Vector3(0,1,0).transformDirection(model.matrixWorld).transformDirection(toHost);
-    const across=up.clone().cross(normal);
-    if (across.lengthSq()<1e-6) across.set(1,0,0).cross(normal);
-    across.normalize();
-    const upright=normal.clone().cross(across);
-    const geometry=decorGeometry(shape,size);
-    const placement=new THREE.Matrix4().makeBasis(across,upright,normal)
-      .setPosition(center.addScaledVector(normal,-.01*size));
-    geometry.applyMatrix4(placement);
-    tint(geometry,color);
+    const {position,normal:normals,color:colors,skinIndex,skinWeight}=host.geometry.attributes;
+    const vertex=new THREE.Vector3();
+    let nearest=0,best=Infinity;
+    for (let i=0;i<position.count;i++) {
+      const distance=vertex.fromBufferAttribute(position,i).distanceToSquared(center);
+      if (distance<best) {best=distance;nearest=i;}
+    }
+    const spots=[{center,normal:face.normal.clone().normalize(),index:nearest}];
+    const count=scatterCounts[shape]??1;
+    if (count>1 && normals) {
+      const reach=(shape==='bubble'?.17:.13)*size;
+      const spacing=(shape==='bubble'?.1:shape==='fur'?.032:.04)*size;
+      const nearby=[];
+      for (let i=0;i<position.count;i++) {
+        if (vertex.fromBufferAttribute(position,i).distanceTo(center)<reach) nearby.push(i);
+      }
+      for (let i=nearby.length-1;i>0;i--) {
+        const j=Math.floor(Math.random()*(i+1));
+        [nearby[i],nearby[j]]=[nearby[j],nearby[i]];
+      }
+      for (const index of nearby) {
+        if (spots.length>=count) break;
+        const spot=new THREE.Vector3().fromBufferAttribute(position,index);
+        if (spots.some(item=>item.center.distanceTo(spot)<spacing)) continue;
+        spots.push({center:spot,normal:new THREE.Vector3().fromBufferAttribute(normals,index).normalize(),index});
+      }
+    }
+    const tip=new THREE.Color(shape==='eye'?'#1d1c22':color);
+    const pieces=spots.map(({center:spot,normal,index})=>{
+      const geometry=decorGeometry(shape,size*(count>1?.7+Math.random()*.6:1));
+      paintDecor(geometry,shape,tip,colors?new THREE.Color().fromBufferAttribute(colors,index):tip);
+      const across=up.clone().cross(normal);
+      if (across.lengthSq()<1e-6) across.set(1,0,0).cross(normal);
+      across.normalize();
+      const upright=normal.clone().cross(across);
+      geometry.applyMatrix4(new THREE.Matrix4().makeBasis(across,upright,normal)
+        .setPosition(spot.clone().addScaledVector(normal,-.01*size)));
+      if (host.isSkinnedMesh) {
+        const total=geometry.getAttribute('position').count;
+        const indices=new Uint16Array(total*4);
+        const weights=new Float32Array(total*4);
+        for (let i=0;i<total;i++) for (let slot=0;slot<4;slot++) {
+          indices[i*4+slot]=skinIndex.getComponent(index,slot);
+          weights[i*4+slot]=skinWeight.getComponent(index,slot);
+        }
+        geometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(indices,4));
+        geometry.setAttribute('skinWeight',new THREE.Float32BufferAttribute(weights,4));
+      }
+      return geometry;
+    });
+    const geometry=pieces.length>1?mergeGeometries(pieces):pieces[0];
+    if (pieces.length>1) for (const piece of pieces) piece.dispose();
     let mesh;
     if (host.isSkinnedMesh) {
-      const {position,skinIndex,skinWeight}=host.geometry.attributes;
-      const vertex=new THREE.Vector3();
-      let nearest=0,best=Infinity;
-      for (let i=0;i<position.count;i++) {
-        const distance=vertex.fromBufferAttribute(position,i).distanceToSquared(point.clone().applyMatrix4(toHost));
-        if (distance<best) {best=distance;nearest=i;}
-      }
-      const count=geometry.getAttribute('position').count;
-      const indices=new Uint16Array(count*4);
-      const weights=new Float32Array(count*4);
-      for (let i=0;i<count;i++) for (let slot=0;slot<4;slot++) {
-        indices[i*4+slot]=skinIndex.getComponent(nearest,slot);
-        weights[i*4+slot]=skinWeight.getComponent(nearest,slot);
-      }
-      geometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(indices,4));
-      geometry.setAttribute('skinWeight',new THREE.Float32BufferAttribute(weights,4));
       mesh=new THREE.SkinnedMesh(geometry,ceramic);
       mesh.frustumCulled=false;
     } else {
@@ -631,6 +738,7 @@ export function createAvatar({example=false}={}) {
     mesh.name='Decor';
     mesh.userData.decor=true;
     mesh.userData.host=host.name;
+    mesh.decorHost=host;
     mesh.castShadow=true;
     mesh.position.copy(host.position);
     mesh.quaternion.copy(host.quaternion);
@@ -713,6 +821,25 @@ export function createAvatar({example=false}={}) {
   }
 
   return {model,joints,rest,surfaces,bodyMesh,ankles,wrists,parts,decorations,addPart,removePart,addDecor,removeDecor,positionExtension,mirrorSurface};
+}
+
+export const poses={rest:'기본 자세',wave:'손 흔들기',cheer:'만세',down:'팔 내리기',tilt:'갸웃'};
+// Joint turns away from the rest pose, as Euler angles.
+const poseAngles={
+  wave:{UpperArmL:[0,0,.72],ForearmL:[0,0,.55],UpperArmR:[0,0,1.15],ForearmR:[0,0,.1],Head:[0,0,-.16],Spine:[0,0,.05]},
+  cheer:{UpperArmL:[0,0,.8],ForearmL:[0,0,.45],UpperArmR:[0,0,-.8],ForearmR:[0,0,-.45],Head:[-.08,0,0]},
+  down:{UpperArmL:[0,0,-1.15],UpperArmR:[0,0,1.15],ForearmL:[0,0,-.1],ForearmR:[0,0,.1]},
+  tilt:{UpperArmL:[0,0,-1.05],UpperArmR:[0,0,1.05],ForearmL:[0,0,.35],ForearmR:[0,0,-.35],Head:[0,0,.34],Spine:[0,0,-.07]},
+};
+export function applyPose(avatar,pose) {
+  resetPose(avatar);
+  const angles=typeof pose==='string'?poseAngles[pose]:pose;
+  const turn=new THREE.Quaternion();
+  for (const [name,values] of Object.entries(angles??{})) {
+    if (!avatar.joints[name] || !avatar.rest[name]) continue;
+    avatar.joints[name].quaternion.copy(avatar.rest[name]).multiply(turn.setFromEuler(new THREE.Euler(...values)));
+  }
+  avatar.model.updateMatrixWorld(true);
 }
 
 export function resetPose(avatar) {

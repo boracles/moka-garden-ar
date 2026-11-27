@@ -43,6 +43,7 @@
         <button type="button" data-tool="paint" aria-pressed="false"><span aria-hidden="true">●</span>칠하기</button>
         <button type="button" data-tool="fill" aria-pressed="false"><span aria-hidden="true">◐</span>통째로 칠하기</button>
         <button type="button" data-tool="blend" aria-pressed="false"><span aria-hidden="true">◌</span>번지기</button>
+        <button type="button" data-tool="tint" aria-pressed="false"><span aria-hidden="true">◍</span>물들이기</button>
         <button type="button" data-tool="decor" aria-pressed="false"><span aria-hidden="true">✿</span>장식 찍기</button>
       </aside>
       <section class="studio" aria-label="캐릭터 미리 보기">
@@ -52,6 +53,8 @@
         <div class="stage-toolbar" id="stage-toolbar">
           <button type="button" id="undo" disabled>되돌리기</button>
           <button type="button" id="show-example" aria-pressed="false">예시 보기</button>
+          <select id="pose" aria-label="포즈"><option value="rest">기본 자세</option><option value="wave">손 흔들기</option><option value="cheer">만세</option><option value="down">팔 내리기</option><option value="tilt">갸웃</option></select>
+          <button type="button" id="save-picture">그림 저장</button>
         </div>
         <div class="studio-meta"><span id="stage-label">내 점토 인형</span><span id="stage-hint">표면을 문질러 볼록하게 · 빈 곳은 끌어서 돌리기</span></div>
         <p id="clay-fusion-status" class="clay-fusion-status" role="status" hidden></p>
@@ -78,7 +81,7 @@
             <fieldset class="part-settings" id="decor-options" hidden>
               <legend>장식 찍기</legend>
               <label for="decor-shape">모양</label>
-              <select id="decor-shape"><option value="star">별</option><option value="flower">꽃</option><option value="heart">하트</option><option value="dot">동그라미</option><option value="bow">리본</option></select>
+              <select id="decor-shape"><option value="star">별</option><option value="flower">꽃</option><option value="heart">하트</option><option value="dot">동그라미</option><option value="bow">리본</option><option value="eye">눈</option><option value="knob">방울 돌기</option><option value="coral">산호</option><option value="cone">고깔</option><option value="spike">가시</option><option value="bubble">뽀글뽀글</option><option value="fur">털</option></select>
               <select id="decor-size" aria-label="크기"><option value="0.7">작게</option><option value="1" selected>보통</option><option value="1.6">크게</option></select>
               <p class="part-settings-hint">고른 색으로 누른 곳에 붙어요.</p>
             </fieldset>

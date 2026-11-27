@@ -34,7 +34,7 @@ h1{margin:0;font-size:clamp(28px,3.4vw,45px);line-height:1.12;letter-spacing:-.0
 .brush-cursor{position:absolute;z-index:1;border:1px solid #255743;border-radius:50%;box-shadow:0 0 0 1px #fff9;pointer-events:none;transform:translate(-50%,-50%)}
 .mirror-cursor{border-style:dashed}
 .stage-toolbar{position:absolute;z-index:2;top:12px;right:12px;display:flex;gap:7px}
-.stage-toolbar button{min-height:38px;padding:6px 10px;border:1px solid #a9bdb0;border-radius:8px;background:#fdfdf5;color:var(--ink);font-size:12px;font-weight:750}
+.stage-toolbar button,.stage-toolbar select{min-height:38px;padding:6px 10px;border:1px solid #a9bdb0;border-radius:8px;background:#fdfdf5;color:var(--ink);font-size:12px;font-weight:750}
 .stage-toolbar [aria-pressed=true]{background:var(--green);border-color:var(--green);color:white}
 .studio-meta{position:absolute;left:20px;right:20px;bottom:15px;display:flex;align-items:center;justify-content:space-between;gap:10px;pointer-events:none;color:#284539;font-size:12px;font-weight:750}
 .studio-meta span:first-child{background:#fff9;padding:7px 11px;border-radius:50px}
